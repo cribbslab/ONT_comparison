@@ -1,0 +1,16 @@
+GENE OVERLAP ANALYSIS SUMMARY
+============================
+Analysis Date: 2025-08-15 
+Author: Rebecca L
+
+DATASET OVERVIEW:
+PCR-cDNA genes detected: 19910
+Direct RNA genes detected: 20897
+Total unique genes: 24261
+
+CONFIDENCE BREAKDOWN:
+
+KEY FINDINGS:
+- High confidence: Jaccard index = 0.675, 8795 genes overlap (67.5%)
+- Medium confidence: Jaccard index = 0.115, 763 genes overlap (11.5%)
+- Low confidence: Jaccard index = 0.142, 1446 genes overlap (14.2%)

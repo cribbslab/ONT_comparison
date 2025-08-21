@@ -1,0 +1,900 @@
+---
+title: "Gene Level Comparison"
+author: "Rebecca L"
+date: "2025-03-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggpubr)
+library(ggpattern)
+library(tidyverse)
+library(ggplot2)
+library(pheatmap)
+library(DESeq2)
+library(kableExtra)
+library(vsn)
+library(ggfortify)
+library(AnnotationDbi)
+library (org.Hs.eg.db)
+library(PCAtools)
+library(reshape2)
+library(RColorBrewer)
+library(fgsea)
+library(GOSemSim)
+library(enrichplot)
+library(clusterProfiler)
+library(ggvenn)
+library(gplots)
+library(purrr)
+library(biomaRt)
+library(GSEABase)
+library(GSVA)
+source("customfunc.R")
+
+```
+```{r import, normalisation, PCA plot}
+
+#Count matrix
+cdna_count=read.table("cdna2_SKMM2_counts_gene.txt", header=T, sep="\t")[1:7]
+drna_count=read.table("drnasub_SKMM2_counts_gene.txt", header=T, sep="\t")
+combdata=left_join(cdna_count, drna_count, by="GENEID")
+
+#Annotate HGNC symbols
+gene_info=read.csv("tx_v46_info.csv", header=TRUE)[,c(2:3)]
+readcounts_an=left_join(combdata, gene_info, by=join_by(GENEID==GENENAME), multiple="any")
+rownames(readcounts_an)=readcounts_an$GENEID
+#Sample Information
+sampleinfo=read.table("sampleinfo.csv", header=T, row.names=1, sep=",", stringsAsFactors = TRUE)
+#Lib size plot
+librarySizes <- colSums(readcounts_an[,2:13])
+barplot(librarySizes, names=names(librarySizes), las=2, main="Barplot of library sizes")
+
+#Filter out 'IG' genes
+ig=grep('^IGH|^IGK|^IGL|^HLA', readcounts_an$HGNC)
+readcounts_an=readcounts_an[-ig,]
+
+#Make DESeq Dataset & Filter No Counts
+readcounts_an[,2:13]=sapply(readcounts_an[,2:13],as.integer)
+dds=DESeqDataSetFromMatrix(countData=readcounts_an[,2:13], 
+                           colData=sampleinfo, 
+                           design=~Experiment+Condition)
+
+hgnc=readcounts_an$HGNC
+mcols(dds)= DataFrame(mcols(dds), hgnc)
+mcols(dds)
+
+#DESeq Object
+dds <- estimateSizeFactors(dds)
+dds=dds[rowSums(counts(dds))>=1,]
+
+#DESeq + VSD Normalisation
+dds=DESeq(dds)
+vsd=vst(dds, blind=TRUE)
+vsd_mat=as.matrix(assay(vsd))
+meanSdPlot(vsd_mat, ranks=FALSE)
+
+
+#PCA Plot
+pca_res=prcomp(t(vsd_mat), scale. = TRUE)
+autoplot(pca_res, data=sampleinfo, colour="Condition", shape="Experiment", size=4)
+
+
+
+sampleDists <- dist(t(assay(vsd)))
+library("RColorBrewer")
+sampleDistMatrix <- as.matrix(sampleDists)
+rownames(sampleDistMatrix) <- paste(vsd$Experiment, vsd$Condition, sep="-")
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette( rev(brewer.pal(9, "Reds")) )(255)
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows=sampleDists,
+         clustering_distance_cols=sampleDists,
+         col=colors)
+
+```
+```{r import DGE results}
+#Read in results
+cdna_dge=read.csv("DGE_cdna.csv", row.names=1, header=TRUE)
+drna_dge=read.csv("DGE_drnasub.csv", row.names=1, header=TRUE)
+
+#Remove NA
+cdna_dge=cdna_dge[!is.na(cdna_dge$padj),]
+drna_dge=drna_dge[!is.na(drna_dge$padj),]
+
+#Extract sig up and sig down genes
+cdna_up=rownames(cdna_dge)[cdna_dge$padj<0.05 & cdna_dge$log2FoldChange>0]
+drna_up=rownames(drna_dge)[drna_dge$padj<0.05 & drna_dge$log2FoldChange>0]
+up=list("PCR-cDNA"=cdna_up, directRNA=drna_up)
+rm(cdna_up, drna_up)
+
+cdna_down=rownames(cdna_dge)[cdna_dge$padj<0.05 & cdna_dge$log2FoldChange<0]
+drna_down=rownames(drna_dge)[drna_dge$padj<0.05 & drna_dge$log2FoldChange<0]
+down=list("PCR-cDNA"=cdna_down, directRNA=drna_down)
+rm(cdna_down, drna_down)
+
+#Venns
+library(ggvenn)
+
+#UP
+ggvenn(up, 
+       fill_color=c("turquoise3", "navy"),
+       text_size=6,
+       show_percentage=FALSE, 
+       auto_scale=TRUE)
+ggvenn(down, 
+       fill_color=c("turquoise3", "navy"),
+       text_size=6,
+       show_percentage=FALSE, 
+       auto_scale=TRUE) 
+
+```
+
+```{r gsva}
+
+#Get entrez IDs
+ensembl=useEnsembl(biomart="genes",
+                   dataset="hsapiens_gene_ensembl")
+
+G_list=getBM(attributes=c("ensembl_gene_id_version", "entrezgene_id", "hgnc_symbol"), values=readcounts_an$GENEID, mart=ensembl)
+gsva_array=as.data.frame(vsd_mat)
+gsva_array$geneid=rownames(gsva_array)
+gsva_an=inner_join(gsva_array, G_list, by=join_by(geneid==ensembl_gene_id_version), multiple="any")
+gsva_an=gsva_an[!duplicated(gsva_an$hgnc_symbol),]
+rownames(gsva_an)=gsva_an$hgnc_symbol
+
+
+#Set up array
+pdata=AnnotatedDataFrame(sampleinfo)
+exprs=ExpressionSet(assayData=as.matrix(gsva_an[,1:12]), phenoData=pdata)
+
+
+#Hallmark gene set
+hallmark=list.files()
+h.gs=getGmt("h.all.v2024.1.Hs.symbols.gmt", collectionType=BroadCollection(category="h"),
+            geneIdType = SymbolIdentifier())
+
+gsva_par=gsvaParam(exprs, h.gs, minSize=5, maxSize=500)
+gsva=gsva(gsva_par)
+
+#DE analysis of gene sets
+library(limma)
+library(edgeR)
+gsva$group=paste0(gsva$Experiment,gsva$Condition)
+mod=model.matrix(~gsva$group)
+contrasts=makeContrasts("cDNAControl-cDNAIL6", "dRNAControl-dRNAIL6", levels=c("cDNAIL6", "cDNAControl", "dRNAIL6", "dRNAControl"))
+
+fit=lmFit(gsva, mod)
+fit=contrasts.fit(fit, contrasts)
+fit=eBayes(fit)
+
+res=decideTests(fit, p.value=0.05)
+summary(res)
+tt=topTable(fit, coef=1, n=50)
+tt2=topTable(fit, coef=2, n=50)
+
+#Format results df
+pathways=rownames(tt)
+pathways=strsplit(pathways, split="HALLMARK_" )
+rownames(tt)=lapply(pathways, '[', 2)
+tt=rownames_to_column(tt, var="pathway")
+tt$cdna_sig=case_when(tt$adj.P.Val<0.05 & tt$logFC>0 ~'UP', tt$adj.P.Val<0.05 & tt$logFC<0 ~"DOWN", .default="NS")
+tt=tt[,c(1,8)]
+
+pathways=rownames(tt2)
+pathways=strsplit(pathways, split="HALLMARK_")
+rownames(tt2)=lapply(pathways, "[", 2)
+tt2=rownames_to_column(tt2, var="pathway")
+tt2$drna_sig=case_when(tt2$adj.P.Val<0.05 & tt2$logFC>0 ~'UP', tt2$adj.P.Val<0.05 & tt2$logFC<0 ~"DOWN", .default="NS")
+tt2=tt2[, c(1,8)]
+
+ann=inner_join(tt, tt2, by="pathway")
+ann=column_to_rownames(ann, var="pathway")
+#Annotate each gene set with up down or NS
+
+ann_colour=list(cdna_sig=c(NS="grey30", UP="red", DOWN="mediumblue"),
+                drna_sig=c(NS="grey30", UP="red", DOWN="mediumblue"),
+                Condition=c(Control="pink", IL6="darkred"),
+                Experiment=c(cDNA="turquoise3", dRNA="navy"))
+
+
+
+
+pathways=rownames(gsva)
+pathways=strsplit(pathways, split="HALLMARK_" )
+gsva_array=exprs(gsva)
+rownames(gsva_array)=lapply(pathways, '[', 2)
+
+heatmap=pheatmap(gsva_array, clustering_distance_cols="correlation", clustering_distance_rows="correlation", annotation_colors=ann_colour, annotation_row=ann, annotation_col=sampleinfo, cutree_cols=2, cutree_rows=2, scale="column")
+```
+
+
+```{r scatterplots illustrative}
+
+#Annotate protocol and bind
+dge_comb=left_join(cdna_dge[,c(2,7)], drna_dge[,c(2,7)],by="hgnc")
+colnames(dge_comb)=c("PCR-cDNA", "hgnc", "DirectRNA")
+dge_comb_m=pivot_longer(dge_comb, cols=c(1,3))
+
+ggplot(dge_comb, aes(x=`PCR-cDNA`, y=DirectRNA))+geom_point(colour="grey30")+
+  scale_y_continuous(limits=c(-2.5,5))+
+  scale_x_continuous(limits=c(-2.5,5))+theme(
+      legend.text = element_text(size =14),
+      axis.text = element_text(size = 18), 
+      axis.title.x=element_text(size=18),
+      axis.title.y=element_text(size=18))+
+  geom_smooth(method="lm", colour="red",linetype="dashed")+
+  stat_regline_equation(label.x = -2.3, label.y = 4, size = 6,colour="grey30")+
+        stat_cor( label.x=-2.3, label.y=3.3, size=6, colour="red")
+
+
+```
+
+```{r expression of genes of interest from DTU analysis}
+genes_hgnc=c("RPL22L1", "GRB2", "RNF220")
+genes=gsva_an$geneid[gsva_an$hgnc_symbol %in% genes_hgnc]
+vsd_sel=as.data.frame(vsd_mat[rownames(vsd_mat) %in% genes,])
+vsd_t=data.frame(t(vsd_sel))
+vsd_t$Condition=sampleinfo$Condition
+vsd_t$Experiment=sampleinfo$Experiment
+colnames(vsd_t)=c(genes_hgnc, "Condition", "Experiment")
+
+vsd_m=pivot_longer(vsd_t, cols=1:3)
+
+#RPL22L1
+ggplot(vsd_m[vsd_m$name=="RPL22L1",], aes(x=Condition, y=value, fill=Experiment))+ stat_summary(fun="mean", geom="bar") + stat_summary(geom="errorbar", colour="black", position=position_dodge(0.95))+ facet_wrap(~Experiment) +theme_bw()+ scale_fill_manual(values=c("turquoise3", "navy"))+xlab("Condition")+ylab("log2 Normalised  Expression") + theme(
+      legend.text = element_text(size =14),
+      axis.text = element_text(size = 18), 
+      axis.title.x=element_text(size=18),
+      axis.title.y=element_text(size=18))
+
+#GRB2
+ggplot(vsd_m[vsd_m$name=="GRB2",], aes(x=Condition, y=value, fill=Experiment))+ stat_summary(fun="mean", geom="bar") + stat_summary(geom="errorbar", colour="black", position=position_dodge(0.95))+ facet_wrap(~Experiment) +theme_bw()+ scale_fill_manual(values=c("turquoise3", "navy"))+xlab("Condition")+ylab("log2 Normalised  Expression") + theme(
+      legend.text = element_text(size =14),
+      axis.text = element_text(size = 18), 
+      axis.title.x=element_text(size=18),
+      axis.title.y=element_text(size=18))
+
+#RNF220
+ggplot(vsd_m[vsd_m$name=="RNF220",], aes(x=Condition, y=value, fill=Experiment))+ stat_summary(fun="mean", geom="bar") + stat_summary(geom="errorbar", colour="black", position=position_dodge(0.95))+ facet_wrap(~Experiment) +theme_bw()+ scale_fill_manual(values=c("turquoise3", "navy"))+xlab("Condition")+ylab("log2 Normalised  Expression") + theme(
+      legend.text = element_text(size =14),
+      axis.text = element_text(size = 18), 
+      axis.title.x=element_text(size=18),
+      axis.title.y=element_text(size=18))
+
+#Pull out DGE significance values
+cdna_dge[cdna_dge$hgnc %in% genes_hgnc,6:7]
+drna_dge[drna_dge$hgnc %in% genes_hgnc, 6:7]
+```
+
+
+```{r}
+---
+title: "Gene Level Comparison"
+author: "Rebecca L"
+date: "2025-03-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggpubr)
+library(ggpattern)
+library(tidyverse)
+library(ggplot2)
+library(pheatmap)
+library(DESeq2)
+library(kableExtra)
+library(vsn)
+library(ggfortify)
+library(AnnotationDbi)
+library (org.Hs.eg.db)
+library(PCAtools)
+library(reshape2)
+library(RColorBrewer)
+library(fgsea)
+library(GOSemSim)
+library(enrichplot)
+library(clusterProfiler)
+library(ggvenn)
+library(gplots)
+library(purrr)
+library(biomaRt)
+library(GSEABase)
+library(GSVA)
+source("customfunc.R")
+
+# Create PDF device for all plots
+pdf("all_graphs_output.pdf", width = 12, height = 8)
+```
+
+```{r import, normalisation, PCA plot}
+#Count matrix
+cdna_count=read.table("cdna2_SKMM2_counts_gene.txt", header=T, sep="\t")[1:7]
+drna_count=read.table("drnasub_SKMM2_counts_gene.txt", header=T, sep="\t")
+combdata=left_join(cdna_count, drna_count, by="GENEID")
+
+#Annotate HGNC symbols
+gene_info=read.csv("tx_v46_info.csv", header=TRUE)[,c(2:3)]
+readcounts_an=left_join(combdata, gene_info, by=join_by(GENEID==GENENAME), multiple="any")
+rownames(readcounts_an)=readcounts_an$GENEID
+
+#Sample Information
+sampleinfo=read.table("sampleinfo.csv", header=T, row.names=1, sep=",", stringsAsFactors = TRUE)
+
+#Lib size plot
+librarySizes <- colSums(readcounts_an[,2:13])
+barplot(librarySizes, names=names(librarySizes), las=2, main="Barplot of library sizes")
+
+#Filter out 'IG' genes
+ig=grep('^IGH|^IGK|^IGL|^HLA', readcounts_an$HGNC)
+readcounts_an=readcounts_an[-ig,]
+
+#Make DESeq Dataset & Filter No Counts
+readcounts_an[,2:13]=sapply(readcounts_an[,2:13],as.integer)
+dds=DESeqDataSetFromMatrix(countData=readcounts_an[,2:13],
+                            colData=sampleinfo,
+                            design=~Experiment+Condition)
+hgnc=readcounts_an$HGNC
+mcols(dds)= DataFrame(mcols(dds), hgnc)
+mcols(dds)
+
+#DESeq Object
+dds <- estimateSizeFactors(dds)
+dds=dds[rowSums(counts(dds))>=1,]
+
+#DESeq + VSD Normalisation
+dds=DESeq(dds)
+vsd=vst(dds, blind=TRUE)
+vsd_mat=as.matrix(assay(vsd))
+meanSdPlot(vsd_mat, ranks=FALSE)
+
+#PCA Plot
+pca_res=prcomp(t(vsd_mat), scale. = TRUE)
+print(autoplot(pca_res, data=sampleinfo, colour="Condition", shape="Experiment", size=4))
+
+sampleDists <- dist(t(assay(vsd)))
+library("RColorBrewer")
+sampleDistMatrix <- as.matrix(sampleDists)
+rownames(sampleDistMatrix) <- paste(vsd$Experiment, vsd$Condition, sep="-")
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette( rev(brewer.pal(9, "Reds")) )(255)
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows=sampleDists,
+         clustering_distance_cols=sampleDists,
+         col=colors)
+```
+
+```{r import DGE results}
+#Read in results
+cdna_dge=read.csv("DGE_cdna.csv", row.names=1, header=TRUE)
+drna_dge=read.csv("DGE_drnasub.csv", row.names=1, header=TRUE)
+
+#Remove NA
+cdna_dge=cdna_dge[!is.na(cdna_dge$padj),]
+drna_dge=drna_dge[!is.na(drna_dge$padj),]
+
+#Extract sig up and sig down genes
+cdna_up=rownames(cdna_dge)[cdna_dge$padj<0.05 & cdna_dge$log2FoldChange>0]
+drna_up=rownames(drna_dge)[drna_dge$padj<0.05 & drna_dge$log2FoldChange>0]
+up=list("PCR-cDNA"=cdna_up, directRNA=drna_up)
+rm(cdna_up, drna_up)
+
+cdna_down=rownames(cdna_dge)[cdna_dge$padj<0.05 & cdna_dge$log2FoldChange<0]
+drna_down=rownames(drna_dge)[drna_dge$padj<0.05 & drna_dge$log2FoldChange<0]
+down=list("PCR-cDNA"=cdna_down, directRNA=drna_down)
+rm(cdna_down, drna_down)
+
+#Venns
+library(ggvenn)
+#UP
+print(ggvenn(up,
+       fill_color=c("turquoise3", "navy"),
+       text_size=6,
+       show_percentage=FALSE,
+        auto_scale=TRUE))
+
+print(ggvenn(down,
+        fill_color=c("turquoise3", "navy"),
+       text_size=6,
+       show_percentage=FALSE,
+        auto_scale=TRUE))
+```
+
+```{r gsva}
+#Get entrez IDs
+ensembl=useEnsembl(biomart="genes",
+                   dataset="hsapiens_gene_ensembl")
+G_list=getBM(attributes=c("ensembl_gene_id_version", "entrezgene_id", "hgnc_symbol"), 
+values=readcounts_an$GENEID, mart=ensembl)
+
+gsva_array=as.data.frame(vsd_mat)
+gsva_array$geneid=rownames(gsva_array)
+gsva_an=inner_join(gsva_array, G_list, by=join_by(geneid==ensembl_gene_id_version), multiple="any")
+gsva_an=gsva_an[!duplicated(gsva_an$hgnc_symbol),]
+rownames(gsva_an)=gsva_an$hgnc_symbol
+
+#Set up array
+pdata=AnnotatedDataFrame(sampleinfo)
+exprs=ExpressionSet(assayData=as.matrix(gsva_an[,1:12]), phenoData=pdata)
+
+#Hallmark gene set
+hallmark=list.files()
+h.gs=getGmt("h.all.v2024.1.Hs.symbols.gmt", collectionType=BroadCollection(category="h"),
+            geneIdType = SymbolIdentifier())
+gsva_par=gsvaParam(exprs, h.gs, minSize=5, maxSize=500)
+gsva=gsva(gsva_par)
+
+#DE analysis of gene sets
+library(limma)
+library(edgeR)
+gsva$group=paste0(gsva$Experiment,gsva$Condition)
+mod=model.matrix(~gsva$group)
+contrasts=makeContrasts("cDNAControl-cDNAIL6", "dRNAControl-dRNAIL6", 
+levels=c("cDNAIL6", "cDNAControl", "dRNAIL6", "dRNAControl"))
+fit=lmFit(gsva, mod)
+fit=contrasts.fit(fit, contrasts)
+fit=eBayes(fit)
+res=decideTests(fit, p.value=0.05)
+summary(res)
+
+tt=topTable(fit, coef=1, n=50)
+tt2=topTable(fit, coef=2, n=50)
+
+#Format results df
+pathways=rownames(tt)
+pathways=strsplit(pathways, split="HALLMARK_" )
+rownames(tt)=lapply(pathways, '[', 2)
+tt=rownames_to_column(tt, var="pathway")
+tt$cdna_sig=case_when(tt$adj.P.Val<0.05 & tt$logFC>0 ~'UP', 
+tt$adj.P.Val<0.05 & tt$logFC<0 ~"DOWN", .default="NS")
+tt=tt[,c(1,8)]
+
+pathways=rownames(tt2)
+pathways=strsplit(pathways, split="HALLMARK_")
+rownames(tt2)=lapply(pathways, "[", 2)
+tt2=rownames_to_column(tt2, var="pathway")
+tt2$drna_sig=case_when(tt2$adj.P.Val<0.05 & tt2$logFC>0 ~'UP', 
+tt2$adj.P.Val<0.05 & tt2$logFC<0 ~"DOWN", .default="NS")
+tt2=tt2[, c(1,8)]
+
+ann=inner_join(tt, tt2, by="pathway")
+ann=column_to_rownames(ann, var="pathway")
+
+#Annotate each gene set with up down or NS
+ann_colour=list(cdna_sig=c(NS="grey30", UP="red", DOWN="mediumblue"),
+                drna_sig=c(NS="grey30", UP="red", DOWN="mediumblue"),
+                Condition=c(Control="pink", IL6="darkred"),
+                Experiment=c(cDNA="turquoise3", dRNA="navy"))
+
+pathways=rownames(gsva)
+pathways=strsplit(pathways, split="HALLMARK_" )
+gsva_array=exprs(gsva)
+rownames(gsva_array)=lapply(pathways, '[', 2)
+
+heatmap=pheatmap(gsva_array, clustering_distance_cols="correlation", 
+clustering_distance_rows="correlation", annotation_colors=ann_colour, 
+annotation_row=ann, annotation_col=sampleinfo, cutree_cols=2, cutree_rows=2, scale="column")
+```
+
+```{r scatterplots illustrative}
+#Annotate protocol and bind
+dge_comb=left_join(cdna_dge[,c(2,7)], drna_dge[,c(2,7)],by="hgnc")
+colnames(dge_comb)=c("PCR-cDNA", "hgnc", "DirectRNA")
+dge_comb_m=pivot_longer(dge_comb, cols=c(1,3))
+
+scatter_plot <- ggplot(dge_comb, aes(x=`PCR-cDNA`, y=DirectRNA))+
+geom_point(colour="grey30")+  
+scale_y_continuous(limits=c(-2.5,5))+  
+scale_x_continuous(limits=c(-2.5,5))+
+theme(      
+legend.text = element_text(size =14),      
+axis.text = element_text(size = 18),       
+axis.title.x=element_text(size=18),      
+axis.title.y=element_text(size=18))+  
+geom_smooth(method="lm", colour="red",linetype="dashed")+  
+stat_regline_equation(label.x = -2.3, label.y = 4, size = 6,colour="grey30")+        
+stat_cor( label.x=-2.3, label.y=3.3, size=6, colour="red")
+
+print(scatter_plot)
+```
+
+```{r expression of genes of interest from DTU analysis}
+genes_hgnc=c("RPL22L1", "GRB2", "RNF220")
+genes=gsva_an$geneid[gsva_an$hgnc_symbol %in% genes_hgnc]
+vsd_sel=as.data.frame(vsd_mat[rownames(vsd_mat) %in% genes,])
+vsd_t=data.frame(t(vsd_sel))
+vsd_t$Condition=sampleinfo$Condition
+vsd_t$Experiment=sampleinfo$Experiment
+colnames(vsd_t)=c(genes_hgnc, "Condition", "Experiment")
+vsd_m=pivot_longer(vsd_t, cols=1:3)
+
+#RPL22L1
+rpl22l1_plot <- ggplot(vsd_m[vsd_m$name=="RPL22L1",], aes(x=Condition, y=value, fill=Experiment))+ 
+stat_summary(fun="mean", geom="bar") + 
+stat_summary(geom="errorbar", colour="black", position=position_dodge(0.95))+ 
+facet_wrap(~Experiment) +
+theme_bw()+ 
+scale_fill_manual(values=c("turquoise3", "navy"))+
+xlab("Condition")+
+ylab("log2 Normalised  Expression") + 
+theme(      
+legend.text = element_text(size =14),      
+axis.text = element_text(size = 18),       
+axis.title.x=element_text(size=18),      
+axis.title.y=element_text(size=18))
+
+print(rpl22l1_plot)
+
+#GRB2
+grb2_plot <- ggplot(vsd_m[vsd_m$name=="GRB2",], aes(x=Condition, y=value, fill=Experiment))+ 
+stat_summary(fun="mean", geom="bar") + 
+stat_summary(geom="errorbar", colour="black", position=position_dodge(0.95))+ 
+facet_wrap(~Experiment) +
+theme_bw()+ 
+scale_fill_manual(values=c("turquoise3", "navy"))+
+xlab("Condition")+
+ylab("log2 Normalised  Expression") + 
+theme(      
+legend.text = element_text(size =14),      
+axis.text = element_text(size = 18),       
+axis.title.x=element_text(size=18),      
+axis.title.y=element_text(size=18))
+
+print(grb2_plot)
+
+#RNF220
+rnf220_plot <- ggplot(vsd_m[vsd_m$name=="RNF220",], aes(x=Condition, y=value, fill=Experiment))+ 
+stat_summary(fun="mean", geom="bar") + 
+stat_summary(geom="errorbar", colour="black", position=position_dodge(0.95))+ 
+facet_wrap(~Experiment) +
+theme_bw()+ 
+scale_fill_manual(values=c("turquoise3", "navy"))+
+xlab("Condition")+
+ylab("log2 Normalised  Expression") + 
+theme(      
+legend.text = element_text(size =14),      
+axis.text = element_text(size = 18),       
+axis.title.x=element_text(size=18),      
+axis.title.y=element_text(size=18))
+
+print(rnf220_plot)
+
+#Pull out DGE significance values
+cdna_dge[cdna_dge$hgnc %in% genes_hgnc,6:7]
+drna_dge[drna_dge$hgnc %in% genes_hgnc, 6:7]
+
+# Close the PDF device
+dev.off()
+```
+
+
+---
+title: "Gene Level Comparison"
+author: "Rebecca L"
+date: "2025-03-17"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggpubr)
+library(ggpattern)
+library(tidyverse)
+library(ggplot2)
+library(pheatmap)
+library(DESeq2)
+library(kableExtra)
+library(vsn)
+library(ggfortify)
+library(AnnotationDbi)
+library (org.Hs.eg.db)
+library(PCAtools)
+library(reshape2)
+library(RColorBrewer)
+library(fgsea)
+library(GOSemSim)
+library(enrichplot)
+library(clusterProfiler)
+library(ggvenn)
+library(gplots)
+library(purrr)
+library(biomaRt)
+library(GSEABase)
+library(GSVA)
+source("customfunc.R")
+```
+
+```{r import, normalisation, PCA plot}
+#Count matrix
+cdna_count=read.table("cdna2_SKMM2_counts_gene.txt", header=T, sep="\t")[1:7]
+drna_count=read.table("drnasub_SKMM2_counts_gene.txt", header=T, sep="\t")
+combdata=left_join(cdna_count, drna_count, by="GENEID")
+
+#Annotate HGNC symbols
+gene_info=read.csv("tx_v46_info.csv", header=TRUE)[,c(2:3)]
+readcounts_an=left_join(combdata, gene_info, by=join_by(GENEID==GENENAME), multiple="any")
+rownames(readcounts_an)=readcounts_an$GENEID
+
+#Sample Information
+sampleinfo=read.table("sampleinfo.csv", header=T, row.names=1, sep=",", stringsAsFactors = TRUE)
+
+#Lib size plot
+librarySizes <- colSums(readcounts_an[,2:13])
+pdf("library_sizes_barplot.pdf", width = 10, height = 6)
+barplot(librarySizes, names=names(librarySizes), las=2, main="Barplot of library sizes")
+dev.off()
+
+#Filter out 'IG' genes
+ig=grep('^IGH|^IGK|^IGL|^HLA', readcounts_an$HGNC)
+readcounts_an=readcounts_an[-ig,]
+
+#Make DESeq Dataset & Filter No Counts
+readcounts_an[,2:13]=sapply(readcounts_an[,2:13],as.integer)
+dds=DESeqDataSetFromMatrix(countData=readcounts_an[,2:13],
+                            colData=sampleinfo,
+                            design=~Experiment+Condition)
+hgnc=readcounts_an$HGNC
+mcols(dds)= DataFrame(mcols(dds), hgnc)
+mcols(dds)
+
+#DESeq Object
+dds <- estimateSizeFactors(dds)
+dds=dds[rowSums(counts(dds))>=1,]
+
+#DESeq + VSD Normalisation
+dds=DESeq(dds)
+vsd=vst(dds, blind=TRUE)
+vsd_mat=as.matrix(assay(vsd))
+
+# Save meanSdPlot
+pdf("meanSd_plot.pdf", width = 8, height = 6)
+meanSdPlot(vsd_mat, ranks=FALSE)
+dev.off()
+
+#PCA Plot
+pca_res=prcomp(t(vsd_mat), scale. = TRUE)
+pca_plot <- autoplot(pca_res, data=sampleinfo, colour="Condition", shape="Experiment", size=4)
+ggsave("pca_plot.pdf", pca_plot, width = 10, height = 8)
+
+sampleDists <- dist(t(assay(vsd)))
+library("RColorBrewer")
+sampleDistMatrix <- as.matrix(sampleDists)
+rownames(sampleDistMatrix) <- paste(vsd$Experiment, vsd$Condition, sep="-")
+colnames(sampleDistMatrix) <- NULL
+colors <- colorRampPalette( rev(brewer.pal(9, "Reds")) )(255)
+
+# Save sample distance heatmap
+pdf("sample_distance_heatmap.pdf", width = 10, height = 8)
+pheatmap(sampleDistMatrix,
+         clustering_distance_rows=sampleDists,
+         clustering_distance_cols=sampleDists,
+         col=colors)
+dev.off()
+```
+
+```{r import DGE results}
+#Read in results
+cdna_dge=read.csv("DGE_cdna.csv", row.names=1, header=TRUE)
+drna_dge=read.csv("DGE_drnasub.csv", row.names=1, header=TRUE)
+
+#Remove NA
+cdna_dge=cdna_dge[!is.na(cdna_dge$padj),]
+drna_dge=drna_dge[!is.na(drna_dge$padj),]
+
+#Extract sig up and sig down genes
+cdna_up=rownames(cdna_dge)[cdna_dge$padj<0.05 & cdna_dge$log2FoldChange>0]
+drna_up=rownames(drna_dge)[drna_dge$padj<0.05 & drna_dge$log2FoldChange>0]
+up=list("PCR-cDNA"=cdna_up, directRNA=drna_up)
+rm(cdna_up, drna_up)
+
+cdna_down=rownames(cdna_dge)[cdna_dge$padj<0.05 & cdna_dge$log2FoldChange<0]
+drna_down=rownames(drna_dge)[drna_dge$padj<0.05 & drna_dge$log2FoldChange<0]
+down=list("PCR-cDNA"=cdna_down, directRNA=drna_down)
+rm(cdna_down, drna_down)
+
+#Venns
+library(ggvenn)
+#UP
+up_venn <- ggvenn(up,
+       fill_color=c("turquoise3", "navy"),
+       text_size=6,
+       show_percentage=FALSE,
+        auto_scale=TRUE)
+ggsave("venn_upregulated_genes.pdf", up_venn, width = 8, height = 6)
+
+down_venn <- ggvenn(down,
+        fill_color=c("turquoise3", "navy"),
+       text_size=6,
+       show_percentage=FALSE,
+        auto_scale=TRUE)
+ggsave("venn_downregulated_genes.pdf", down_venn, width = 8, height = 6)
+```
+
+```{r gsva}
+#Get entrez IDs
+ensembl=useEnsembl(biomart="genes",
+                   dataset="hsapiens_gene_ensembl")
+G_list=getBM(attributes=c("ensembl_gene_id_version", "entrezgene_id", "hgnc_symbol"), 
+values=readcounts_an$GENEID, mart=ensembl)
+
+gsva_array=as.data.frame(vsd_mat)
+gsva_array$geneid=rownames(gsva_array)
+gsva_an=inner_join(gsva_array, G_list, by=join_by(geneid==ensembl_gene_id_version), multiple="any")
+gsva_an=gsva_an[!duplicated(gsva_an$hgnc_symbol),]
+rownames(gsva_an)=gsva_an$hgnc_symbol
+
+#Set up array
+pdata=AnnotatedDataFrame(sampleinfo)
+exprs=ExpressionSet(assayData=as.matrix(gsva_an[,1:12]), phenoData=pdata)
+
+#Hallmark gene set
+hallmark=list.files()
+h.gs=getGmt("h.all.v2024.1.Hs.symbols.gmt", collectionType=BroadCollection(category="h"),
+            geneIdType = SymbolIdentifier())
+gsva_par=gsvaParam(exprs, h.gs, minSize=5, maxSize=500)
+gsva=gsva(gsva_par)
+
+#DE analysis of gene sets
+library(limma)
+library(edgeR)
+gsva$group=paste0(gsva$Experiment,gsva$Condition)
+mod=model.matrix(~gsva$group)
+contrasts=makeContrasts("cDNAControl-cDNAIL6", "dRNAControl-dRNAIL6", 
+levels=c("cDNAIL6", "cDNAControl", "dRNAIL6", "dRNAControl"))
+fit=lmFit(gsva, mod)
+fit=contrasts.fit(fit, contrasts)
+fit=eBayes(fit)
+res=decideTests(fit, p.value=0.05)
+summary(res)
+
+tt=topTable(fit, coef=1, n=50)
+tt2=topTable(fit, coef=2, n=50)
+
+#Format results df
+pathways=rownames(tt)
+pathways=strsplit(pathways, split="HALLMARK_" )
+rownames(tt)=lapply(pathways, '[', 2)
+tt=rownames_to_column(tt, var="pathway")
+tt$cdna_sig=case_when(tt$adj.P.Val<0.05 & tt$logFC>0 ~'UP', 
+tt$adj.P.Val<0.05 & tt$logFC<0 ~"DOWN", .default="NS")
+tt=tt[,c(1,8)]
+
+pathways=rownames(tt2)
+pathways=strsplit(pathways, split="HALLMARK_")
+rownames(tt2)=lapply(pathways, "[", 2)
+tt2=rownames_to_column(tt2, var="pathway")
+tt2$drna_sig=case_when(tt2$adj.P.Val<0.05 & tt2$logFC>0 ~'UP', 
+tt2$adj.P.Val<0.05 & tt2$logFC<0 ~"DOWN", .default="NS")
+tt2=tt2[, c(1,8)]
+
+ann=inner_join(tt, tt2, by="pathway")
+ann=column_to_rownames(ann, var="pathway")
+
+#Annotate each gene set with up down or NS
+ann_colour=list(cdna_sig=c(NS="grey30", UP="red", DOWN="mediumblue"),
+                drna_sig=c(NS="grey30", UP="red", DOWN="mediumblue"),
+                Condition=c(Control="pink", IL6="darkred"),
+                Experiment=c(cDNA="turquoise3", dRNA="navy"))
+
+pathways=rownames(gsva)
+pathways=strsplit(pathways, split="HALLMARK_" )
+gsva_array=exprs(gsva)
+rownames(gsva_array)=lapply(pathways, '[', 2)
+
+# Save GSVA heatmap
+pdf("gsva_hallmark_heatmap.pdf", width = 8, height = 10)
+heatmap=pheatmap(gsva_array, clustering_distance_cols="correlation", 
+clustering_distance_rows="correlation", annotation_colors=ann_colour, 
+annotation_row=ann, annotation_col=sampleinfo, cutree_cols=2, cutree_rows=2, scale="column")
+dev.off()
+```
+
+```{r scatterplots illustrative}
+#Annotate protocol and bind
+dge_comb=left_join(cdna_dge[,c(2,7)], drna_dge[,c(2,7)],by="hgnc")
+colnames(dge_comb)=c("PCR-cDNA", "hgnc", "DirectRNA")
+dge_comb_m=pivot_longer(dge_comb, cols=c(1,3))
+
+scatter_plot <- ggplot(dge_comb, aes(x=`PCR-cDNA`, y=DirectRNA))+
+  geom_point(size = 0.8, alpha = 0.6, color = "black") +  
+  scale_y_continuous(limits = c(-2.5, 5), 
+                     breaks = seq(-2, 5, 1),
+                     expand = c(0.02, 0)) +  
+  scale_x_continuous(limits = c(-2.5, 5), 
+                     breaks = seq(-2, 5, 1),
+                     expand = c(0.02, 0)) +
+  geom_smooth(method = "lm", color = "red", linewidth = 0.8, se = FALSE) +
+  labs(x = "PCR-cDNA log₂FC", 
+       y = "Direct RNA log₂FC") +
+  stat_regline_equation(label.x = -2.2, label.y = 4.5, 
+                       size = 2.5, color = "black") +        
+  stat_cor(label.x = -2.2, label.y = 4.0, 
+           size = 2.5, color = "black") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 8, color = "black"),       
+    axis.title = element_text(size = 9, color = "black"),
+    axis.line = element_line(color = "black", linewidth = 0.5),
+    axis.ticks = element_line(color = "black", linewidth = 0.5),
+    axis.ticks.length = unit(2, "pt"),
+    plot.margin = margin(10, 10, 10, 10),
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  ) +
+  coord_fixed(ratio = 1)
+
+ggsave("dge_correlation_scatterplot.pdf", scatter_plot, 
+       width = 3.5, height = 3.5, units = "in", dpi = 300)
+```
+
+
+```{r expression of genes of interest from DTU analysis}
+genes_hgnc=c("RPL22L1", "GRB2", "RNF220")
+genes=gsva_an$geneid[gsva_an$hgnc_symbol %in% genes_hgnc]
+vsd_sel=as.data.frame(vsd_mat[rownames(vsd_mat) %in% genes,])
+vsd_t=data.frame(t(vsd_sel))
+vsd_t$Condition=sampleinfo$Condition
+vsd_t$Experiment=sampleinfo$Experiment
+colnames(vsd_t)=c(genes_hgnc, "Condition", "Experiment")
+vsd_m=pivot_longer(vsd_t, cols=1:3)
+
+#RPL22L1
+rpl22l1_plot <- ggplot(vsd_m[vsd_m$name=="RPL22L1",], aes(x=Condition, y=value, fill=Experiment))+ 
+stat_summary(fun="mean", geom="bar") + 
+stat_summary(geom="errorbar", colour="black", position=position_dodge(0.95))+ 
+facet_wrap(~Experiment) +
+theme_bw()+ 
+scale_fill_manual(values=c("turquoise3", "navy"))+
+xlab("Condition")+
+ylab("log2 Normalised  Expression") + 
+theme(      
+legend.text = element_text(size =14),      
+axis.text = element_text(size = 18),       
+axis.title.x=element_text(size=18),      
+axis.title.y=element_text(size=18))
+
+ggsave("RPL22L1_expression.pdf", rpl22l1_plot, width = 10, height = 6)
+
+#GRB2
+grb2_plot <- ggplot(vsd_m[vsd_m$name=="GRB2",], aes(x=Condition, y=value, fill=Experiment))+ 
+stat_summary(fun="mean", geom="bar") + 
+stat_summary(geom="errorbar", colour="black", position=position_dodge(0.95))+ 
+facet_wrap(~Experiment) +
+theme_bw()+ 
+scale_fill_manual(values=c("turquoise3", "navy"))+
+xlab("Condition")+
+ylab("log2 Normalised  Expression") + 
+theme(      
+legend.text = element_text(size =14),      
+axis.text = element_text(size = 18),       
+axis.title.x=element_text(size=18),      
+axis.title.y=element_text(size=18))
+
+ggsave("GRB2_expression.pdf", grb2_plot, width = 10, height = 6)
+
+#RNF220
+rnf220_plot <- ggplot(vsd_m[vsd_m$name=="RNF220",], aes(x=Condition, y=value, fill=Experiment))+ 
+stat_summary(fun="mean", geom="bar") + 
+stat_summary(geom="errorbar", colour="black", position=position_dodge(0.95))+ 
+facet_wrap(~Experiment) +
+theme_bw()+ 
+scale_fill_manual(values=c("turquoise3", "navy"))+
+xlab("Condition")+
+ylab("log2 Normalised  Expression") + 
+theme(      
+legend.text = element_text(size =14),      
+axis.text = element_text(size = 18),       
+axis.title.x=element_text(size=18),      
+axis.title.y=element_text(size=18))
+
+ggsave("RNF220_expression.pdf", rnf220_plot, width = 10, height = 6)
+
+#Pull out DGE significance values
+cdna_dge[cdna_dge$hgnc %in% genes_hgnc,6:7]
+drna_dge[drna_dge$hgnc %in% genes_hgnc, 6:7]
+```

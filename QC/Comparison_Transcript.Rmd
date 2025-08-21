@@ -1,0 +1,199 @@
+---
+title: "SKMM2 cDNA dRNA Tx Comparison"
+author: "Rebecca L"
+date: "2025-06-02"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggvenn)
+library(dplyr)
+library(edgeR)
+library(stats)
+library(tidyr)
+library(forcats)
+library(ggpubr)
+library(biomaRt)
+library(AnnotationDbi)
+library(tidyverse)
+```
+
+```{r import tx matrices}
+
+#Read in matrices
+#All reads
+cdna_tx=read.table("./bambu_counts/cdna2_SKMM2_counts_transcript.txt", header=T, sep="\t")
+drna_tx=read.table("./bambu_counts/drnasub_SKMM2_counts_transcript.txt", header=T)
+
+#Full-length reads
+
+cdna_fl=read.table("./bambu_counts/cdna2_SKMM2_fullLengthCounts_transcript.txt", header=T, sep="\t")
+drna_fl=read.table("./bambu_counts/drnasub_SKMM2_fullLengthCounts_transcript.txt", header=T, sep="\t")
+
+#Unique Reads
+cdna_uni=read.table("./bambu_counts/cdna2_SKMM2_uniqueCounts_transcript.txt", header=T, sep="\t")
+drna_uni=read.table("./bambu_counts/drnasub_SKMM2_uniqueCounts_transcript.txt", header=T, sep="\t")
+
+
+#Filter out transcripts not detected at any level
+cdna_tx2=cdna_tx[rowSums(cdna_tx[3:8])>0,]
+drna_tx2=drna_tx[rowSums(drna_tx[3:8])>0,]
+
+#Subset full-length and unique counts to these filtered tx
+cdna_uni2=cdna_uni[cdna_uni$TXNAME %in% cdna_tx2$TXNAME,]
+drna_uni2=drna_uni[drna_uni$TXNAME %in% drna_tx2$TXNAME,]
+
+cdna_fl2=cdna_fl[cdna_fl$TXNAME %in% cdna_tx2$TXNAME,]
+drna_fl2=drna_fl[drna_fl$TXNAME %in% drna_tx2$TXNAME,]
+
+#Combine into list
+cdna=list("all"=cdna_tx2, "full_length"=cdna_fl2, "unique"=cdna_uni2)
+drna=list("all"=drna_tx2, "full_length"=drna_fl2, "unique"=drna_uni2)
+
+rm(cdna_tx, drna_tx, cdna_fl, drna_fl, cdna_uni, drna_uni)
+
+#Convert total counts to CPM
+
+cdna$cpm=data.frame(cdna$all[,1:2], cpm(cdna$all[3:8], log=FALSE))
+drna$cpm=data.frame(drna$all[,1:2], cpm(drna$all[3:8], log=FALSE))
+
+#Summary columns on each df
+
+cdna <- lapply(cdna, function(x){
+ x$sum <- rowSums(x[3:8])
+ x$detect <- rowSums((x[3:8])>0)
+ x$mean <- rowMeans(x[3:8])
+ return(x)
+})           
+
+drna <- lapply(drna, function(x){
+ x$sum <- rowSums(x[3:8])
+ x$detect <- rowSums((x[3:8])>0)
+ x$mean <- rowMeans(x[3:8])
+ return(x)
+})           
+
+```
+#Definitions of Confidence Levels
+##Low = no unique or full-length reads or average < 1 CPM 
+##Medium = average > 1 CPM with at least 1 full-length or unique read
+##High= average > 5 CPM and supported by at least 5 full length reads and 5 unique reads
+
+```{r confidence}
+
+
+#High confidence
+cdna_high=Reduce(intersect, list(cdna$unique$TXNAME[cdna$unique$sum>5], cdna$full_length$TXNAME[cdna$full_length$sum>5]))
+
+drna_high=Reduce(intersect, list(drna$unique$TXNAME[drna$unique$sum>5], drna$full_length$TXNAME[drna$full_length$sum>5]))
+
+
+#Low confidence
+cdna_low=Reduce(intersect, list(cdna$full_length$TXNAME[cdna$full_length$sum==0],cdna$unique$TXNAME[cdna$unique$sum==0]))
+
+
+drna_low=Reduce(intersect, list(drna$full_length$TXNAME[drna$full_length$sum==0],drna$unique$TXNAME[drna$unique$sum==0]))
+
+
+#Medium
+cdna_med=cdna$all$TXNAME[!cdna$all$TXNAME %in% cdna_high & !cdna$all$TXNAME %in% cdna_low]
+
+drna_med=drna$all$TXNAME[!drna$all$TXNAME %in% drna_high & !drna$all$TXNAME %in% drna_low]
+
+#List
+cdna_conf=list("Low"=cdna_low, "Med"=cdna_med, "High"=cdna_high)
+drna_conf=list("Low"=drna_low, "Med"=drna_med, "High"=drna_high)
+
+rm(cdna_low, cdna_med, cdna_high, drna_low, drna_med, drna_high)
+```
+
+
+```{r annotate and plot tx detection}
+
+#Annotate high, medium, low confidence transcripts
+cdna$cpm$confidence="Low"
+cdna$cpm$confidence[cdna$cpm$TXNAME %in% cdna_conf$Med]="Medium"
+cdna$cpm$confidence[cdna$cpm$TXNAME %in% cdna_conf$High]="High"
+
+drna$cpm$confidence="Low"
+drna$cpm$confidence[drna$cpm$TXNAME %in% drna_conf$Med]="Medium"
+drna$cpm$confidence[drna$cpm$TXNAME %in% drna_conf$High]="High"
+
+#Plot high, med, low proportions
+stacked=data.frame(cdna=table(cdna$cpm$confidence), drna=table(drna$cpm$confidence))[,-3]
+stacked_m=pivot_longer(stacked, cols=2:3)
+colnames(stacked_m)=c("conf", "protocol", "Number of Transcripts")
+stacked_m=stacked_m %>% mutate (Protocol=as.factor(case_when(protocol =="cdna.Freq" ~ "PCR-cDNA", .default="direct RNA")))
+labels=c("High", "Medium", "Low")
+
+stacked_m %>% mutate (Confidence=fct_relevel(conf, "High", "Medium", "Low")) %>% ggplot (aes(x=Protocol, y=`Number of Transcripts`, fill=Confidence))+geom_bar(position="stack", stat="identity")+ scale_fill_manual(values=c("darkred", "red", "pink"), labels=labels)+ theme(
+    legend.text = element_text(size =14),
+    axis.text = element_text(size = 16), 
+    axis.title.x=element_text(size=18),
+    axis.title.y=element_text(size=18)
+  )
+```
+```{r confidence by length}
+
+tx_annot=read.csv(file="tx_info.csv", header=TRUE)
+
+cdna$cpmannot=left_join(cdna$cpm, tx_annot, by="TXNAME")
+drna$cpmannot=left_join(drna$cpm, tx_annot, by="TXNAME")
+#Summary of transcript lengths
+summary(cdna$cpmannot$Length)
+summary(drna$cpmannot$Length)
+
+#Split transcripts into quartiles by length 
+#Q1= 0-999bp
+#Q2= 1000-1999 bp
+#Q3= 2000-3499 bp
+#Q4 >=3500 bp
+
+cdna$cpmannot=cdna$cpmannot %>% mutate (quartile=as.factor(case_when(Length >999 & Length<3500 ~"1000-3500bp", Length>3500 ~ ">3500bp", .default="<1000bp")))
+
+drna$cpmannot=drna$cpmannot %>% mutate (quartile=as.factor(case_when(Length >999 & Length<3500 ~"1000-3500bp", Length>3500 ~ ">3500bp", .default="<1000bp")))
+
+#Table of detection by length
+conf_length=data.frame(cdna=table(cdna$cpmannot$confidence, cdna$cpmannot$quartile), drna=table(drna$cpmannot$conf, drna$cpmannot$quartile))[,-c(4:5)]
+stacked_length=pivot_longer(conf_length, cols=3:4)
+colnames(stacked_length)=c("conf", "Quartile", "Protocol", "Number of Transcripts")
+stacked_length$Protocol[stacked_length$Protocol=="cdna.Freq"]="PCR-cDNA"
+stacked_length$Protocol[stacked_length$Protocol=="drna.Freq"]="direct RNA"
+
+stacked_length %>% mutate (Confidence=fct_relevel(conf, "High", "Medium", "Low"), quartile=fct_relevel(Quartile, "<1000bp", "1000-3500bp", ">3500bp")) %>% ggplot (aes(x=Protocol, y=`Number of Transcripts`, fill=Confidence))+geom_bar(position="stack", stat="identity")+facet_wrap(~quartile)+ scale_fill_manual(values=c("darkred", "red", "pink"))+ theme(
+    legend.text = element_text(size = 14),
+    axis.text.y= element_text(size = 18), 
+    axis.text.x=element_text(size=18, angle=45, hjust=1),
+    axis.title.x=element_text(size=18),
+    axis.title.y=element_text(size=18)
+  )
+
+
+
+stacked_length %>% mutate (Confidence=fct_relevel(conf, "High", "Medium", "Low")) %>% ggplot (aes(x=Protocol, y=`Number of Transcripts`, fill=Quartile))+geom_bar(position="stack", stat="identity")+facet_wrap(~Confidence)+scale_fill_manual(values=c("darkred", "red", "pink"))
+
+
+```
+
+```{r venns}
+
+
+ggvenn(data=list("dRNA"=drna$all$TXNAME, "cDNA"=cdna$all$TXNAME),
+               fill_color=c("navy", "turquoise"), auto_scale=TRUE, show_percentage = FALSE)+ggtitle("All Transcripts")
+
+overlap=gplots::venn(data=list("dRNA"=drna$all$TXNAME, "cDNA"=cdna$all$TXNAME), show.plot=FALSE, intersections=TRUE)
+lists=attr(overlap, "intersections")
+shared_tx=lists$`dRNA:cDNA`
+
+
+ggvenn(data=list("cDNA"=cdna_conf$High, "dRNA"=drna_conf$High),
+       fill_color=c("turquoise3", "navy"), auto_scale=TRUE, show_percentage = FALSE)+ggtitle("High Confidence")
+
+ggvenn(data=list("dRNA"=drna_conf$Med, "cDNA"=cdna_conf$Med),
+       fill_color=c("turquoise3", "navy"), auto_scale=TRUE, show_percentage=FALSE)+ggtitle("Medium Confidence")
+ggvenn(data=list("dRNA"=drna_conf$Low, "cDNA"=cdna_conf$Low),
+       fill_color=c("turquoise3", "navy"), show_percentage=FALSE, auto_scale=TRUE)+ggtitle("Low Confidence")
+
+
+```

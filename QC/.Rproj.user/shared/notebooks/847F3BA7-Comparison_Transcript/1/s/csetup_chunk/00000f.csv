@@ -1,0 +1,68 @@
+"0","knitr::opts_chunk$set(echo = TRUE)"
+"0","library(ggvenn)"
+"0","library(dplyr)"
+"0","library(edgeR)"
+"2","Loading required package: limma
+"
+"2","
+Attaching package: ‘limma’
+
+"
+"2","The following object is masked from ‘package:DEXSeq’:
+
+    plotMA
+
+"
+"2","The following object is masked from ‘package:DESeq2’:
+
+    plotMA
+
+"
+"2","The following object is masked from ‘package:BiocGenerics’:
+
+    plotMA
+
+"
+"0","library(stats)"
+"0","library(tidyr)"
+"0","library(forcats)"
+"0","library(ggpubr)"
+"0","library(biomaRt)"
+"0","library(AnnotationDbi)"
+"0","library(tidyverse)"
+"2","── [1mAttaching core tidyverse packages[22m ─────────────────────────────────────────────────────────────────────────── tidyverse 2.0.0 ──
+[32m✔[39m [34mlubridate[39m 1.9.4     [32m✔[39m [34mstringr  [39m 1.5.1
+[32m✔[39m [34mpurrr    [39m 1.1.0     [32m✔[39m [34mtibble   [39m 3.3.0
+[32m✔[39m [34mreadr    [39m 2.1.5     "
+"2","── [1mConflicts[22m ───────────────────────────────────────────────────────────────────────────────────────────── tidyverse_conflicts() ──
+[31m✖[39m [34mlubridate[39m::[32m%within%()[39m masks [34mIRanges[39m::%within%()
+[31m✖[39m [34mdata.table[39m::[32mbetween()[39m masks [34mdplyr[39m::between()
+[31m✖[39m [34mdplyr[39m::[32mcollapse()[39m     masks [34mIRanges[39m::collapse()
+[31m✖[39m [34mdplyr[39m::[32mcombine()[39m      masks [34mBiobase[39m::combine(), [34mBiocGenerics[39m::combine()
+[31m✖[39m [34mdplyr[39m::[32mcount()[39m        masks [34mmatrixStats[39m::count()
+[31m✖[39m [34mrstatix[39m::[32mdesc()[39m       masks [34mdplyr[39m::desc(), [34mIRanges[39m::desc()
+[31m✖[39m [34mtidyr[39m::[32mexpand()[39m       masks [34mS4Vectors[39m::expand()
+[31m✖[39m [34mrstatix[39m::[32mfilter()[39m     masks [34mdplyr[39m::filter(), [34mstats[39m::filter()
+[31m✖[39m [34mdata.table[39m::[32mfirst()[39m   masks [34mdplyr[39m::first(), [34mS4Vectors[39m::first()
+[31m✖[39m [34mlubridate[39m::[32mhour()[39m     masks [34mdata.table[39m::hour()
+[31m✖[39m [34mlubridate[39m::[32misoweek()[39m  masks [34mdata.table[39m::isoweek()
+[31m✖[39m [34mdplyr[39m::[32mlag()[39m          masks [34mstats[39m::lag()
+[31m✖[39m [34mdata.table[39m::[32mlast()[39m    masks [34mdplyr[39m::last()
+[31m✖[39m [34mlubridate[39m::[32mmday()[39m     masks [34mdata.table[39m::mday()
+[31m✖[39m [34mlubridate[39m::[32mminute()[39m   masks [34mdata.table[39m::minute()
+[31m✖[39m [34mlubridate[39m::[32mmonth()[39m    masks [34mdata.table[39m::month()
+[31m✖[39m [34mggplot2[39m::[32mPosition()[39m   masks [34mBiocGenerics[39m::Position(), [34mbase[39m::Position()
+[31m✖[39m [34mlubridate[39m::[32mquarter()[39m  masks [34mdata.table[39m::quarter()
+[31m✖[39m [34mpurrr[39m::[32mreduce()[39m       masks [34mGenomicRanges[39m::reduce(), [34mIRanges[39m::reduce()
+[31m✖[39m [34mdplyr[39m::[32mrename()[39m       masks [34mS4Vectors[39m::rename()
+[31m✖[39m [34mlubridate[39m::[32msecond()[39m   masks [34mdata.table[39m::second(), [34mS4Vectors[39m::second()
+[31m✖[39m [34mlubridate[39m::[32msecond<-()[39m masks [34mS4Vectors[39m::second<-()
+[31m✖[39m [34mbiomaRt[39m::[32mselect()[39m     masks [34mrstatix[39m::select(), [34mdplyr[39m::select(), [34mAnnotationDbi[39m::select()
+[31m✖[39m [34mdplyr[39m::[32mslice()[39m        masks [34mIRanges[39m::slice()
+[31m✖[39m [34mpurrr[39m::[32mtranspose()[39m    masks [34mdata.table[39m::transpose()
+[31m✖[39m [34mtibble[39m::[32mview()[39m        masks [34msummarytools[39m::view()
+[31m✖[39m [34mlubridate[39m::[32mwday()[39m     masks [34mdata.table[39m::wday()
+[31m✖[39m [34mlubridate[39m::[32mweek()[39m     masks [34mdata.table[39m::week()
+[31m✖[39m [34mlubridate[39m::[32myday()[39m     masks [34mdata.table[39m::yday()
+[31m✖[39m [34mlubridate[39m::[32myear()[39m     masks [34mdata.table[39m::year()
+[36mℹ[39m Use the ]8;;http://conflicted.r-lib.org/conflicted package]8;; to force all conflicts to become errors"

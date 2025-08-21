@@ -1,0 +1,8 @@
+"0","#GRB2"
+"0","ggplot(comb_cpm_m[comb_cpm_m$gene_name==""GRB2"",], aes(x=name, y=value, fill=TXNAME, group=name)) + geom_col() + scale_fill_viridis(discrete=TRUE) + facet_wrap(~protocol)+"
+"0","  xlab(""Condition"") + ylab(""log2 Normalised Count per Million (CPM)"") +theme("
+"0","      legend.text = element_text(size =14),"
+"0","      axis.text = element_text(size = 18), "
+"0","      axis.title.x=element_text(size=18),"
+"0","      axis.title.y=element_text(size=18),"
+"0","      legend.position=""bottom"")"

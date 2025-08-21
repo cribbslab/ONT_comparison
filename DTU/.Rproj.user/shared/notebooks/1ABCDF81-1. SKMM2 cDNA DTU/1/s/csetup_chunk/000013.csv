@@ -1,0 +1,47 @@
+"0","library(DESeq2)"
+"0","library(DEXSeq)"
+"0","library(stageR)"
+"0","library(dplyr)"
+"0","library(tidyr)"
+"0","library(ggplot2)"
+"0","library(pheatmap)"
+"0","library(tximport)"
+"0","library(GenomicFeatures)"
+"0","library(txdbmaker)"
+"2","
+Attaching package: ‘txdbmaker’
+
+"
+"2","The following objects are masked from ‘package:GenomicFeatures’:
+
+    browseUCSCtrack, getChromInfoFromBiomart, makeFDbPackageFromUCSC, makeFeatureDbFromUCSC, makePackageName,
+    makeTxDb, makeTxDbFromBiomart, makeTxDbFromEnsembl, makeTxDbFromGFF, makeTxDbFromGRanges, makeTxDbFromUCSC,
+    makeTxDbPackage, makeTxDbPackageFromBiomart, makeTxDbPackageFromUCSC, supportedMiRBaseBuildValues,
+    supportedUCSCFeatureDbTables, supportedUCSCFeatureDbTracks, supportedUCSCtables, UCSCFeatureDbTableSchema
+
+"
+"0","library('biomaRt')"
+"0","library(tidyverse)"
+"2","── [1mAttaching core tidyverse packages[22m ─────────────────────────────────────────────────────────────────────────── tidyverse 2.0.0 ──
+[32m✔[39m [34mforcats  [39m 1.0.0     [32m✔[39m [34mreadr    [39m 2.1.5
+[32m✔[39m [34mlubridate[39m 1.9.4     [32m✔[39m [34mstringr  [39m 1.5.1
+[32m✔[39m [34mpurrr    [39m 1.1.0     [32m✔[39m [34mtibble   [39m 3.3.0"
+"2","── [1mConflicts[22m ───────────────────────────────────────────────────────────────────────────────────────────── tidyverse_conflicts() ──
+[31m✖[39m [34mlubridate[39m::[32m%within%()[39m masks [34mIRanges[39m::%within%()
+[31m✖[39m [34mdplyr[39m::[32mcollapse()[39m     masks [34mIRanges[39m::collapse()
+[31m✖[39m [34mdplyr[39m::[32mcombine()[39m      masks [34mBiobase[39m::combine(), [34mBiocGenerics[39m::combine()
+[31m✖[39m [34mdplyr[39m::[32mcount()[39m        masks [34mmatrixStats[39m::count()
+[31m✖[39m [34mdplyr[39m::[32mdesc()[39m         masks [34mIRanges[39m::desc()
+[31m✖[39m [34mtidyr[39m::[32mexpand()[39m       masks [34mS4Vectors[39m::expand()
+[31m✖[39m [34mdplyr[39m::[32mfilter()[39m       masks [34mstats[39m::filter()
+[31m✖[39m [34mdplyr[39m::[32mfirst()[39m        masks [34mS4Vectors[39m::first()
+[31m✖[39m [34mdplyr[39m::[32mlag()[39m          masks [34mstats[39m::lag()
+[31m✖[39m [34mggplot2[39m::[32mPosition()[39m   masks [34mBiocGenerics[39m::Position(), [34mbase[39m::Position()
+[31m✖[39m [34mpurrr[39m::[32mreduce()[39m       masks [34mGenomicRanges[39m::reduce(), [34mIRanges[39m::reduce()
+[31m✖[39m [34mdplyr[39m::[32mrename()[39m       masks [34mS4Vectors[39m::rename()
+[31m✖[39m [34mlubridate[39m::[32msecond()[39m   masks [34mS4Vectors[39m::second()
+[31m✖[39m [34mlubridate[39m::[32msecond<-()[39m masks [34mS4Vectors[39m::second<-()
+[31m✖[39m [34mbiomaRt[39m::[32mselect()[39m     masks [34mdplyr[39m::select(), [34mAnnotationDbi[39m::select()
+[31m✖[39m [34mdplyr[39m::[32mslice()[39m        masks [34mIRanges[39m::slice()
+[36mℹ[39m Use the ]8;;http://conflicted.r-lib.org/conflicted package]8;; to force all conflicts to become errors"
+"0","knitr::opts_chunk$set(echo = TRUE)"

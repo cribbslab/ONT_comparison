@@ -1,0 +1,28 @@
+{
+    "id": "A5327AC6",
+    "path": "~/Dropbox/MANUSCRIPTS/ONT directRNA/ERCC/ERCC.Rmd",
+    "project_path": "ERCC.Rmd",
+    "type": "r_markdown",
+    "hash": "1445112083",
+    "contents": "",
+    "dirty": false,
+    "created": 1755424633839.0,
+    "source_on_save": false,
+    "relative_order": 1,
+    "properties": {
+        "chunk_output_type": "inline",
+        "source_window_id": "",
+        "Source": "Source",
+        "last_setup_crc32": "b4c6e14d17a569d9",
+        "cursorPosition": "220,3",
+        "scrollLine": "203"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1755458494,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1755458494508,
+    "read_only": false,
+    "read_only_alternatives": []
+}

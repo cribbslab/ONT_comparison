@@ -1,0 +1,3 @@
+"0",""
+"0","#Median quality"
+"0","t_test(np_ctrl, Median.read.quality ~ Protocol)"

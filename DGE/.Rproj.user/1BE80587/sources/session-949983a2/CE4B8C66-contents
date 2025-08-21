@@ -1,0 +1,119 @@
+---
+title: "SKMM2 DGE dRNAsub 2"
+author: "Rebecca L"
+date: "2024-10-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2)
+library(pheatmap)
+library(DESeq2)
+library(kableExtra)
+library(vsn)
+library(ggfortify)
+library(PCAtools)
+library(AnnotationDbi)
+library (org.Hs.eg.db)
+library(PCAtools)
+library(reshape2)
+library(RColorBrewer)
+library(fgsea)
+library(GOSemSim)
+library(enrichplot)
+library(clusterProfiler)
+library(ggvenn)
+library(gplots)
+library(purrr)
+source("customfunc.R")
+```
+
+```{r import and normalisation}
+
+#Count matrix
+readcounts=read.table("drnasub_SKMM2_counts_gene.txt", row.names=1, header=T, sep="\t")
+readcounts$ensembl=rownames(readcounts)
+
+#Annotate HGNC symbols
+gene_info=read.csv("tx_v46_info.csv", header=TRUE)[,c(2:3)]
+readcounts_an=left_join(readcounts, gene_info, by=join_by(ensembl==GENENAME), multiple="any")
+rownames(readcounts_an)=readcounts_an$ensembl
+#Sample Information
+sampleinfo=read.table("sampleinfo.csv", header=T, row.names=1, sep=",")[7:12,]
+sampleinfo$Condition=as.factor(sampleinfo$Condition)
+
+#Filter out 'IG' genes
+ig=grep('^IGH|^IGK|^IGL|^HLA', readcounts_an$HGNC)
+readcounts_an=readcounts_an[-ig,]
+
+#Make DESeq Dataset & Filter No Counts
+readcounts_an[,1:6]=sapply(readcounts_an[1:6], as.integer)
+dds=DESeqDataSetFromMatrix(countData=readcounts_an[,1:6], 
+                           colData=sampleinfo, 
+                           design=~Condition)
+
+hgnc=readcounts_an$HGNC
+mcols(dds)= DataFrame(mcols(dds), hgnc)
+mcols(dds)
+
+#DESeq Object
+dds <- estimateSizeFactors(dds)
+dds=dds[rowSums(counts(dds))>=1,]
+
+#DESeq + VSD Normalisation
+dds=DESeq(dds)
+vsd=vst(dds, blind=FALSE)
+vsd_mat=as.matrix(assay(vsd))
+meanSdPlot(vsd_mat, ranks=FALSE)
+
+```
+
+```{r DGE}
+
+#Extract results for each contrast into df
+my.contrasts=resultsNames(dds)[2]
+
+result_list <- list()
+for (i in my.contrasts)
+  { res <- results(dds, name=i, alpha=0.05)
+  result_list[i] <- res
+}
+
+df_list=lapply(result_list, as.data.frame)
+df_list=lapply(df_list, mutate,hgnc=dds@rowRanges@elementMetadata$hgnc)
+lapply(result_list, head)
+lapply(result_list, DESeq2::summary)
+
+#Annotate significance
+
+df_list=lapply(df_list,mutate, sig=case_when(padj<0.05 &log2FoldChange>1 ~"UP", padj<0.05 &log2FoldChange< -1~"DOWN", .default="NS"))
+
+volcano.colours=c(DOWN="blue",NS="black",UP="red")
+
+
+#Volcano Plots
+ggplot(df_list$Condition_IL6_vs_Control, aes(x=log2FoldChange, y=-log10(padj), colour=sig))+
+  geom_point()+ 
+  scale_colour_manual(values=volcano.colours)+
+  geom_hline(yintercept=-log10(0.05), colour="grey30", linetype="dashed") +
+  scale_y_continuous(limits=c(0, 25))+
+  scale_x_continuous(limits=c(-10,10))+ theme(
+    legend.text = element_text(size =14),
+    axis.text = element_text(size = 18), 
+    axis.title.x=element_text(size=18),
+    axis.title.y=element_text(size=18)
+  )
+
+#Export results
+write.csv(df_list$Condition_IL6_vs_Control,"DGE_drnasub.csv")
+```
+
+
+
+
+
+
+
+

@@ -1,0 +1,12 @@
+"0","pdf(""gsva_hallmark_heatmap.pdf"", width = 8, height = 10)
+heatmap=pheatmap(gsva_array, clustering_distance_cols=""correlation"", 
+clustering_distance_rows=""correlation"", annotation_colors=ann_colour, 
+annotation_row=ann, annotation_col=sampleinfo, cutree_cols=2, cutree_rows=2, scale=""column"")
+dev.off()
+"
+"1","null device "
+"1","
+"
+"1","          1 "
+"1","
+"

@@ -1,0 +1,541 @@
+---
+title: "SKMM2 cDNA vs dRNA Gene"
+author: "Rebecca L"
+date: "2024-10-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggvenn)
+library(dplyr)
+library(edgeR)
+library(tidyr)
+library(forcats)
+library(ggpubr)
+```
+
+```{r data import}
+
+#Import matrices
+cdna_counts=read.table("cdna2_SKMM2_counts_gene.txt", sep="\t", header=TRUE)
+
+drna_counts=read.table("drnasub_SKMM2_counts_gene.txt", sep="\t", header=TRUE)
+
+#Only keep genes with at least 1 count in at least 1 sample
+cdna_filt=cdna_counts[rowSums(cdna_counts[2:7])>0,]
+drna_filt=drna_counts[rowSums(drna_counts[2:7])>0,]
+
+#Convert raw counts to CPM
+cdna_cpm=as.data.frame(cpm(cdna_filt[2:7], log=FALSE))
+cdna_cpm$GENEID=cdna_filt$GENEID
+
+drna_cpm=as.data.frame(cpm(drna_filt[2:7], log=FALSE))
+drna_cpm$GENEID=drna_filt$GENEID
+
+```
+
+```{r defining low, med, high confidence detection}
+
+#Get summary statistics to define low, med and high confidence detection
+
+summary(cdna_cpm)
+summary(drna_cpm)
+
+#So defining low, med, high confidence: 
+##Low = detected in <3 samples 
+##Medium= detected 3-6 samples, average <1 CPM
+##High= detected in 3-6 samples, average >1CPM 
+
+
+cdna_cpm=mutate(cdna_cpm, mean=rowMeans(cdna_cpm[1:6]), detect=rowSums(cdna_cpm[1:6]>0))
+
+cdna_cpm= mutate(cdna_cpm, conf=case_when(detect<3 ~ "Low",  detect==6 ~"High", .default="Medium"))
+
+
+drna_cpm=mutate(drna_cpm, mean=rowMeans(drna_cpm[1:6]), detect=rowSums(drna_cpm[1:6]>0))
+
+drna_cpm= mutate(drna_cpm, conf=case_when(detect<3 ~ "Low", detect==6 ~"High", .default="Medium"))
+
+
+#Plot number of low, med, high confidence genes
+
+stacked=data.frame(cdna=table(cdna_cpm$conf), drna=table(drna_cpm$conf))[,-3]
+stacked_m=pivot_longer(stacked, cols=2:3)
+colnames(stacked_m)=c("conf", "Protocol", "Number of Genes")
+stacked_m=stacked_m %>% mutate (Protocol=as.factor(case_when(Protocol =="cdna.Freq" ~ "PCR-cDNA", .default="direct RNA")))
+
+
+labels=c("High", "Medium", "Low")
+
+stacked_m %>% mutate (Confidence=fct_relevel(conf, "High", "Medium", "Low")) %>% ggplot (aes(x=Protocol, y=`Number of Genes`, fill=Confidence))+geom_bar(position="stack", stat="identity")+ scale_fill_manual(values=c("darkred", "red", "pink"), labels=labels)+ theme(
+    legend.text = element_text(size = 14),
+    axis.text = element_text(size = 18), 
+    axis.title.x=element_text(size=18),
+    axis.title.y=element_text(size=18)
+  )
+
+
+```
+
+```{r overlaps}
+
+#All
+all=list(cDNA=cdna_cpm$GENEID, dRNA=drna_cpm$GENEID)
+
+ggvenn(all, 
+       fill_color=c("turquoise3", "navy"),
+       text_size=6,
+       show_percentage=FALSE, 
+       auto_scale=TRUE) 
+
+#High Confidence
+high=list(cDNA=cdna_cpm$GENEID[cdna_cpm$conf=="High"], dRNA=drna_cpm$GENEID[drna_cpm$conf=="High"])
+
+ggvenn(high, 
+       fill_color=c("turquoise3", "navy"),
+       text_size=6,
+       show_percentage=FALSE, 
+       auto_scale=TRUE) +ggtitle("High Confidence Genes")
+
+
+#Medium Confidence
+medium=list(cDNA=cdna_cpm$GENEID[cdna_cpm$conf=="Medium"], dRNA=drna_cpm$GENEID[drna_cpm$conf=="Medium"])
+
+ggvenn(medium, 
+       fill_color=c("turquoise3", "navy"),
+       text_size=6,
+       show_percentage=FALSE, 
+       auto_scale=TRUE) +ggtitle("Medium Confidence Genes")
+
+
+#Low Confidence
+low=list(cDNA=cdna_cpm$GENEID[cdna_cpm$conf=="Low"], dRNA=drna_cpm$GENEID[drna_cpm$conf=="Low"])
+
+ggvenn(low, 
+       fill_color=c("turquoise3", "navy"),
+       text_size=6,
+       show_percentage=FALSE, 
+       auto_scale=TRUE) +ggtitle("Low Confidence Genes")
+```
+
+
+
+```{r}
+# Publication-Quality Gene Overlap Analysis
+# Author: Rebecca L
+# Date: 2024-10-23
+# SKMM2 cDNA vs dRNA Gene Analysis
+
+# Load required libraries
+library(ggvenn)
+library(dplyr)
+library(edgeR)
+library(tidyr)
+library(forcats)
+library(ggpubr)
+library(ggplot2)
+library(scales)
+library(RColorBrewer)
+
+# ==========================================
+# SETUP: Colors, Fonts, and Theme
+# ==========================================
+
+# Check available fonts and use appropriate one
+available_fonts <- c("Helvetica", "Arial", "sans")
+font_to_use <- available_fonts[available_fonts %in% names(pdfFonts())][1]
+if(is.na(font_to_use)) font_to_use <- "sans"
+
+# Nature journal color palette (colorblind friendly)
+nature_colors <- c("#E64B35", "#4DBBD5", "#00A087", "#3C5488", "#F39B7F", "#8491B4")
+protocol_colors <- c("PCR-cDNA" = "#4DBBD5", "direct RNA" = "#E64B35")
+confidence_colors <- c("High" = "#8B0000", "Medium" = "#DC143C", "Low" = "#FFB6C1")
+
+# Custom Nature-style theme
+nature_theme <- function() {
+  theme_classic() +
+  theme(
+    # Text elements
+    text = element_text(family = font_to_use, color = "black"),
+    axis.title = element_text(size = 8, color = "black"),
+    axis.text = element_text(size = 7, color = "black"),
+    legend.title = element_text(size = 8, color = "black"),
+    legend.text = element_text(size = 7, color = "black"),
+    plot.title = element_text(size = 9, color = "black", hjust = 0.5),
+    strip.text = element_text(size = 8, color = "black"),
+    
+    # Lines and borders
+    axis.line = element_line(color = "black", size = 0.5),
+    axis.ticks = element_line(color = "black", size = 0.5),
+    
+    # Background
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA),
+    strip.background = element_rect(fill = "white", color = "black", size = 0.3),
+    
+    # Legend
+    legend.background = element_rect(fill = "white", color = NA),
+    legend.key = element_rect(fill = "white", color = NA),
+    legend.position = "right",
+    
+    # Margins
+    plot.margin = margin(t = 5, r = 5, b = 5, l = 5, unit = "pt")
+  )
+}
+
+# ==========================================
+# DATA IMPORT AND PROCESSING
+# ==========================================
+
+# Import matrices
+cdna_counts <- read.table("cdna2_SKMM2_counts_gene.txt", sep = "\t", header = TRUE)
+drna_counts <- read.table("drnasub_SKMM2_counts_gene.txt", sep = "\t", header = TRUE)
+
+# Only keep genes with at least 1 count in at least 1 sample
+cdna_filt <- cdna_counts[rowSums(cdna_counts[2:7]) > 0,]
+drna_filt <- drna_counts[rowSums(drna_counts[2:7]) > 0,]
+
+# Convert raw counts to CPM
+cdna_cpm <- as.data.frame(cpm(cdna_filt[2:7], log = FALSE))
+cdna_cpm$GENEID <- cdna_filt$GENEID
+drna_cpm <- as.data.frame(cpm(drna_filt[2:7], log = FALSE))
+drna_cpm$GENEID <- drna_filt$GENEID
+
+# Print data summary
+cat("Data Import Summary:\n")
+cat("===================\n")
+cat(sprintf("PCR-cDNA: %d genes detected\n", nrow(cdna_cpm)))
+cat(sprintf("Direct RNA: %d genes detected\n", nrow(drna_cpm)))
+cat(sprintf("Total unique genes: %d\n", length(unique(c(cdna_cpm$GENEID, drna_cpm$GENEID)))))
+
+# ==========================================
+# CONFIDENCE CLASSIFICATION
+# ==========================================
+
+# Define confidence levels based on detection patterns
+# Low = detected in <3 samples 
+# Medium = detected 3-6 samples, average <1 CPM
+# High = detected in 3-6 samples, average >1CPM 
+
+cdna_cpm <- cdna_cpm %>%
+  mutate(mean = rowMeans(cdna_cpm[1:6]),
+         detect = rowSums(cdna_cpm[1:6] > 0),
+         conf = case_when(detect < 3 ~ "Low",  
+                         detect == 6 ~ "High", 
+                         .default = "Medium"))
+
+drna_cpm <- drna_cpm %>%
+  mutate(mean = rowMeans(drna_cpm[1:6]),
+         detect = rowSums(drna_cpm[1:6] > 0),
+         conf = case_when(detect < 3 ~ "Low", 
+                         detect == 6 ~ "High", 
+                         .default = "Medium"))
+
+# Print confidence summary
+cat("\nConfidence Level Summary:\n")
+cat("========================\n")
+cat("PCR-cDNA:\n")
+print(table(cdna_cpm$conf))
+cat("Direct RNA:\n")
+print(table(drna_cpm$conf))
+
+# ==========================================
+# FIGURE 1: Confidence Level Stacked Bar Chart
+# ==========================================
+
+# Prepare data for stacked bar plot
+stacked <- data.frame(cdna = table(cdna_cpm$conf), drna = table(drna_cpm$conf))[,-3]
+stacked_m <- pivot_longer(stacked, cols = 2:3)
+colnames(stacked_m) <- c("conf", "Protocol", "Number_of_Genes")
+stacked_m <- stacked_m %>% 
+  mutate(Protocol = as.factor(case_when(Protocol == "cdna.Freq" ~ "PCR-cDNA", 
+                                       .default = "direct RNA")))
+
+# Create publication-quality stacked bar chart
+fig1 <- stacked_m %>% 
+  mutate(Confidence = fct_relevel(conf, "High", "Medium", "Low")) %>% 
+  ggplot(aes(x = Protocol, y = Number_of_Genes, fill = Confidence)) +
+  geom_bar(position = "stack", stat = "identity", width = 0.7, color = "black", size = 0.3) + 
+  scale_fill_manual(values = confidence_colors) +
+  scale_y_continuous(expand = c(0, 0), labels = comma_format()) +
+  labs(x = "Protocol", 
+       y = "Number of genes", 
+       fill = "Confidence") +
+  nature_theme() +
+  theme(legend.position = c(0.85, 0.85),
+        legend.background = element_rect(fill = "white", color = "black", size = 0.3),
+        legend.margin = margin(t = 2, r = 4, b = 2, l = 4, unit = "pt"))
+
+print(fig1)
+
+# ==========================================
+# FIGURE 2: Venn Diagrams
+# ==========================================
+
+# Function to create publication-quality Venn diagrams
+create_nature_venn <- function(gene_list, title_text) {
+  ggvenn(gene_list,
+         fill_color = c(protocol_colors["PCR-cDNA"], protocol_colors["direct RNA"]),
+         fill_alpha = 0.6,
+         stroke_color = "black",
+         stroke_size = 0.5,
+         text_size = 3,
+         text_color = "black",
+         show_percentage = FALSE,
+         auto_scale = TRUE,
+         set_name_size = 3) +
+    labs(title = title_text) +
+    theme_void() +
+    theme(plot.title = element_text(size = 8, hjust = 0.5, family = font_to_use),
+          plot.margin = margin(t = 5, r = 5, b = 5, l = 5, unit = "pt"))
+}
+
+# Create gene lists for Venn diagrams
+all_genes <- list(cDNA = cdna_cpm$GENEID, dRNA = drna_cpm$GENEID)
+high_genes <- list(cDNA = cdna_cpm$GENEID[cdna_cpm$conf == "High"], 
+                   dRNA = drna_cpm$GENEID[drna_cpm$conf == "High"])
+medium_genes <- list(cDNA = cdna_cpm$GENEID[cdna_cpm$conf == "Medium"], 
+                     dRNA = drna_cpm$GENEID[drna_cpm$conf == "Medium"])
+low_genes <- list(cDNA = cdna_cpm$GENEID[cdna_cpm$conf == "Low"], 
+                  dRNA = drna_cpm$GENEID[drna_cpm$conf == "Low"])
+
+# Create individual Venn diagrams
+fig2a <- create_nature_venn(all_genes, "All genes")
+fig2b <- create_nature_venn(high_genes, "High confidence")
+fig2c <- create_nature_venn(medium_genes, "Medium confidence") 
+fig2d <- create_nature_venn(low_genes, "Low confidence")
+
+# Combine Venn diagrams into 2x2 layout
+fig2_combined <- ggarrange(fig2a, fig2b, fig2c, fig2d,
+                          ncol = 2, nrow = 2,
+                          labels = c("a", "b", "c", "d"),
+                          font.label = list(size = 9, face = "bold"))
+
+print(fig2_combined)
+
+# ==========================================
+# FIGURE 3: Overlap Statistics
+# ==========================================
+
+# Calculate detailed overlap statistics
+calculate_overlap_stats <- function(set1, set2, name1, name2) {
+  overlap <- length(intersect(set1, set2))
+  union_size <- length(union(set1, set2))
+  jaccard <- overlap / union_size
+  
+  data.frame(
+    Set1 = name1,
+    Set2 = name2,
+    Set1_Size = length(set1),
+    Set2_Size = length(set2),
+    Overlap = overlap,
+    Union = union_size,
+    Jaccard_Index = round(jaccard, 3),
+    Overlap_Percent = round(100 * overlap / union_size, 1)
+  )
+}
+
+# Calculate statistics for each confidence level
+overlap_stats <- rbind(
+  calculate_overlap_stats(all_genes$cDNA, all_genes$dRNA, "PCR-cDNA", "direct RNA") %>% mutate(Confidence = "All"),
+  calculate_overlap_stats(high_genes$cDNA, high_genes$dRNA, "PCR-cDNA", "direct RNA") %>% mutate(Confidence = "High"),
+  calculate_overlap_stats(medium_genes$cDNA, medium_genes$dRNA, "PCR-cDNA", "direct RNA") %>% mutate(Confidence = "Medium"),
+  calculate_overlap_stats(low_genes$cDNA, low_genes$dRNA, "PCR-cDNA", "direct RNA") %>% mutate(Confidence = "Low")
+)
+
+# Create Jaccard index visualization
+fig3 <- overlap_stats %>%
+  filter(Confidence != "All") %>%
+  mutate(Confidence = factor(Confidence, levels = c("High", "Medium", "Low"))) %>%
+  ggplot(aes(x = Confidence, y = Jaccard_Index, fill = Confidence)) +
+  geom_bar(stat = "identity", width = 0.7, color = "black", size = 0.3) +
+  scale_fill_manual(values = confidence_colors) +
+  scale_y_continuous(limits = c(0, 1), expand = c(0, 0), breaks = seq(0, 1, 0.2)) +
+  labs(x = "Confidence level",
+       y = "Jaccard similarity index") +
+  nature_theme() +
+  theme(legend.position = "none") +
+  geom_text(aes(label = sprintf("%.3f", Jaccard_Index)),
+            vjust = -0.5,
+            fontface = "bold",
+            size = 3)
+
+print(fig3)
+
+# ==========================================
+# FIGURE 4: Overlap Breakdown
+# ==========================================
+
+# Create overlap breakdown data
+create_overlap_breakdown <- function(set1, set2, conf_name) {
+  overlap <- length(intersect(set1, set2))
+  set1_only <- length(set1) - overlap
+  set2_only <- length(set2) - overlap
+  
+  data.frame(
+    Confidence = conf_name,
+    Category = c("PCR-cDNA only", "Overlap", "direct RNA only"),
+    Count = c(set1_only, overlap, set2_only)
+  )
+}
+
+# Combine breakdown data
+breakdown_data <- rbind(
+  create_overlap_breakdown(high_genes$cDNA, high_genes$dRNA, "High"),
+  create_overlap_breakdown(medium_genes$cDNA, medium_genes$dRNA, "Medium"),
+  create_overlap_breakdown(low_genes$cDNA, low_genes$dRNA, "Low")
+)
+
+# Define category colors
+category_colors <- c("PCR-cDNA only" = protocol_colors["PCR-cDNA"],
+                    "Overlap" = "#00A087",
+                    "direct RNA only" = protocol_colors["direct RNA"])
+
+# Create overlap breakdown plot
+fig4 <- breakdown_data %>%
+  mutate(Confidence = factor(Confidence, levels = c("High", "Medium", "Low")),
+         Category = factor(Category, levels = c("PCR-cDNA only", "Overlap", "direct RNA only"))) %>%
+  ggplot(aes(x = Confidence, y = Count, fill = Category)) +
+  geom_bar(stat = "identity", position = "stack", width = 0.7, color = "black", size = 0.3) +
+  scale_fill_manual(values = category_colors, name = "Detection") +
+  scale_y_continuous(expand = c(0, 0), labels = comma_format()) +
+  labs(x = "Confidence level",
+       y = "Number of genes") +
+  nature_theme() +
+  geom_text(data = breakdown_data %>% filter(Count > 100),
+            aes(label = comma(Count)),
+            position = position_stack(vjust = 0.5),
+            color = "white",
+            fontface = "bold",
+            size = 2.5)
+
+print(fig4)
+
+# ==========================================
+# Create Publication Summary Table
+# ==========================================
+
+# Format overlap statistics table for publication
+publication_table <- overlap_stats %>%
+  select(Confidence, Set1_Size, Set2_Size, Overlap, Jaccard_Index, Overlap_Percent) %>%
+  mutate(
+    `PCR-cDNA` = format(Set1_Size, big.mark = ","),
+    `Direct RNA` = format(Set2_Size, big.mark = ","),
+    `Overlap` = format(Overlap, big.mark = ","),
+    `Jaccard Index` = sprintf("%.3f", Jaccard_Index),
+    `Overlap (%)` = paste0(Overlap_Percent, "%")
+  ) %>%
+  select(Confidence, `PCR-cDNA`, `Direct RNA`, Overlap, `Jaccard Index`, `Overlap (%)`)
+
+print("Publication Table:")
+print(publication_table)
+
+# ==========================================
+# Save all plots for publication
+# ==========================================
+
+# Create output directory
+dir.create("publication_figures", showWarnings = FALSE)
+
+# Save figures with multiple methods
+save_publication_figure <- function(plot, filename, width = 85, height = 60) {
+  # Try Cairo first (best quality)
+  if(require("Cairo", quietly = TRUE)) {
+    tryCatch({
+      ggsave(paste0("publication_figures/", filename, ".pdf"), plot, 
+             width = width, height = height, units = "mm", dpi = 300, device = cairo_pdf)
+      ggsave(paste0("publication_figures/", filename, ".png"), plot, 
+             width = width, height = height, units = "mm", dpi = 300)
+      cat(sprintf("✓ %s saved successfully\n", filename))
+    }, error = function(e) {
+      cat(sprintf("✗ %s Cairo save failed: %s\n", filename, e$message))
+      # Fallback to standard ggsave
+      ggsave(paste0("publication_figures/", filename, ".png"), plot, 
+             width = width, height = height, units = "mm", dpi = 300)
+    })
+  } else {
+    # Standard ggsave
+    tryCatch({
+      ggsave(paste0("publication_figures/", filename, ".pdf"), plot, 
+             width = width, height = height, units = "mm", dpi = 300)
+      ggsave(paste0("publication_figures/", filename, ".png"), plot, 
+             width = width, height = height, units = "mm", dpi = 300)
+      cat(sprintf("✓ %s saved successfully\n", filename))
+    }, error = function(e) {
+      ggsave(paste0("publication_figures/", filename, ".png"), plot, 
+             width = width, height = height, units = "mm", dpi = 300)
+      cat(sprintf("⚠ %s PNG only (PDF failed): %s\n", filename, e$message))
+    })
+  }
+}
+
+cat("\nSaving publication figures...\n")
+cat("================================\n")
+
+# Save individual figures
+save_publication_figure(fig1, "Figure1_ConfidenceLevels", width = 85, height = 60)
+save_publication_figure(fig2_combined, "Figure2_VennDiagrams", width = 170, height = 120)
+save_publication_figure(fig3, "Figure3_JaccardIndex", width = 85, height = 60)
+save_publication_figure(fig4, "Figure4_OverlapBreakdown", width = 85, height = 60)
+
+# Create comprehensive PDF with all figures
+tryCatch({
+  if(require("Cairo", quietly = TRUE)) {
+    cairo_pdf("publication_figures/Complete_Analysis.pdf", width = 210/25.4, height = 297/25.4)
+  } else {
+    pdf("publication_figures/Complete_Analysis.pdf", width = 210/25.4, height = 297/25.4)
+  }
+  
+  print(fig1)
+  print(fig2_combined)  
+  print(fig3)
+  print(fig4)
+  
+  dev.off()
+  cat("✓ Complete_Analysis.pdf saved successfully\n")
+}, error = function(e) {
+  cat("✗ Complete PDF failed:", e$message, "\n")
+})
+
+# Save summary statistics
+sink("publication_figures/Analysis_Summary.txt")
+cat("GENE OVERLAP ANALYSIS SUMMARY\n")
+cat("============================\n")
+cat("Analysis Date:", format(Sys.Date(), "%Y-%m-%d"), "\n")
+cat("Author: Rebecca L\n\n")
+
+cat("DATASET OVERVIEW:\n")
+cat(sprintf("PCR-cDNA genes detected: %d\n", nrow(cdna_cpm)))
+cat(sprintf("Direct RNA genes detected: %d\n", nrow(drna_cpm)))
+cat(sprintf("Total unique genes: %d\n", length(unique(c(cdna_cpm$GENEID, drna_cpm$GENEID)))))
+
+cat("\nCONFIDENCE BREAKDOWN:\n")
+print(publication_table)
+
+cat("\nKEY FINDINGS:\n")
+for(conf in c("High", "Medium", "Low")) {
+  jaccard_val <- overlap_stats$Jaccard_Index[overlap_stats$Confidence == conf]
+  overlap_val <- overlap_stats$Overlap[overlap_stats$Confidence == conf]
+  overlap_pct <- overlap_stats$Overlap_Percent[overlap_stats$Confidence == conf]
+  cat(sprintf("- %s confidence: Jaccard index = %.3f, %d genes overlap (%s%%)\n", 
+             conf, jaccard_val, overlap_val, overlap_pct))
+}
+sink()
+
+cat("\n==========================================\n")
+cat("PUBLICATION-READY ANALYSIS COMPLETE\n")
+cat("==========================================\n")
+cat("✓ All figures saved as PDF and PNG (300 DPI)\n")
+cat("✓ Nature journal formatting applied\n")
+cat("✓ Summary statistics generated\n")
+cat("\nFiles created in 'publication_figures/':\n")
+cat("- Figure1_ConfidenceLevels.pdf/.png\n")
+cat("- Figure2_VennDiagrams.pdf/.png\n")
+cat("- Figure3_JaccardIndex.pdf/.png\n")
+cat("- Figure4_OverlapBreakdown.pdf/.png\n")
+cat("- Complete_Analysis.pdf\n")
+cat("- Analysis_Summary.txt\n")
+cat("==========================================\n")
+```
+

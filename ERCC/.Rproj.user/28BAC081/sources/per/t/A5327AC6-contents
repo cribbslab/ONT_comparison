@@ -1,0 +1,523 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r setup}
+library(ggplot2)
+library(dplyr)
+library(reshape2)
+library(viridis)
+library(RColorBrewer)
+library(tidyr)
+library(ggpubr)
+library(edgeR)
+source("customfunc.R")
+```
+
+```{r import and reformat}
+#Raw Data
+ercc_counts=read.csv("ercc_counts.csv", header=TRUE)
+#Log2 Normalisation of Read Counts
+ercc_norm=cpm(ercc_counts[, c(2,4)], log=TRUE, prior.count=1)
+ercc2=data.frame(ercc_counts[,1], ercc_norm, ercc_counts[,6:8])
+colnames(ercc2)=c("ID", "cDNA", "dRNA", "Length", "GC", "conc")
+
+#Calculate Concentration in pg/uL
+ercc2$molarmass=(ercc2$Length*320.5)+159
+ercc2$pg=ercc2$molarmass*(ercc2$conc*1E-6)
+ercc2_m=pivot_longer(ercc2, cols=c(2:3))
+```
+
+```{r read lengths}
+cdna_length=read.table("read_lengths_cdna.txt", header=FALSE, colClasses="numeric")
+drna_length=read.table("read_lengths_drna.txt", header=FALSE)
+
+#Hist
+breaks=c(seq(0, 2000, 100), 3000, 4000, 5000, 10000, 100000)
+hist_cdna=hist(cdna_length$V1, breaks=breaks, plot=FALSE)
+hist_drna=hist(drna_length$V1, breaks=breaks, plot=FALSE)
+
+#Bind together
+hist_lengths=data.frame(hist_cdna$breaks[1:25], hist_cdna$counts, hist_drna$counts)
+names(hist_lengths)=c("Length", "cDNA", "dRNA")
+hist_length_m=pivot_longer(hist_lengths, cols=(2:3))
+
+ggplot(hist_length_m, aes(x=Length, y=value, colour=name))+geom_line()+
+  scale_x_continuous(limits=c(0,2000))+ scale_colour_manual(values=c("turquoise3", "navy"))+
+  xlab("Read Length (bp)")+
+  ylab("Number of Reads")+
+  theme(
+    legend.text = element_text(size = 14),
+    axis.text = element_text(size = 18), 
+    axis.title.x=element_text(size=18),
+    axis.title.y=element_text(size=18)
+  )
+```
+
+
+
+
+
+```{r transcript detection vs concentration}
+
+#Annotate whether tx detected (at least 1 read)
+ercc_counts$dRNA=0
+ercc_counts$dRNA[ercc_counts$drna_read>0]=1
+ercc_counts$cDNA=0
+ercc_counts$cDNA[ercc_counts$cdna_read>0]=1
+ercc_counts_m=pivot_longer(ercc_counts, cols=c(9:10))
+
+
+ggplot(ercc_counts_m, aes(x=conc, y=value, colour=name, fill=name)) + geom_point() + scale_x_log10()+
+      stat_smooth(method="glm", se=FALSE, 
+                method.args = list(family=binomial)) +scale_colour_manual(values=c("turquoise3", "navy"))+
+  xlab("Transcript Concentration (aM/\U03BCL)")+
+  ylab("Probablity of Detection")+
+  theme(
+    legend.text = element_text(size = 14),
+    axis.text = element_text(size = 18), 
+    axis.title.x=element_text(size=18),
+    axis.title.y=element_text(size=18)
+  )
+
+```
+
+
+
+
+```{r plot concentration vs CPM}
+
+#Faceted by dataset
+ggplot(ercc2_m[ercc2_m$conc>2,], aes(log2(conc), value, fill=name, colour=name))+geom_point()+ facet_wrap(~name)+
+  geom_smooth(method="lm")+scale_x_continuous(n.breaks=8)+
+  stat_regline_equation(label.x = 0, label.y = 15, size = 4, position="jitter")+
+        stat_cor(aes(label=..rr.label..), label.x=0, label.y=14, position="jitter")+
+  xlab("log2 Transcript Concentration (aM/uL)")+
+  ylab("log2(Counts per Million)")+
+  scale_color_manual(values=c(cDNA="turquoise3", dRNA="navy"))+
+  scale_fill_manual(values=c(cDNA="turquoise3", dRNA="navy"))
+  
+#Combined 
+comb=ggplot(ercc2_m, aes(log2(conc), value, fill=name, colour=name))+geom_point()+
+  geom_smooth(method="lm")+scale_x_continuous(n.breaks=8)+
+  xlab("Transcript Concentration (aM/\U03BCL)")+
+  ylab("log2(Normalised CPM)")+
+  scale_color_manual(values=c(cDNA="turquoise3", dRNA="navy"))+
+  scale_fill_manual(values=c(cDNA="turquoise3", dRNA="navy"))+
+  theme(legend.text = element_text(size = 14),
+    axis.text = element_text(size = 18), 
+    axis.title.x=element_text(size=18),
+    axis.title.y=element_text(size=18)
+  )
+comb
+
+```
+
+
+```{r plot concentration vs CPM}
+
+# Fit linear models separately for cDNA and dRNA
+library(broom)
+
+spread_stats <- ercc2_m %>%
+  filter(conc > 2) %>%
+  group_by(name) %>%
+  do({
+    fit <- lm(value ~ log2(conc), data = .)
+    data.frame(
+      RMSE = sqrt(mean(resid(fit)^2)),
+      MAE  = mean(abs(resid(fit))),
+      RSE  = sigma(fit)  # residual standard error
+    )
+  })
+
+print(spread_stats)
+
+# Faceted by dataset
+ggplot(ercc2_m[ercc2_m$conc>2,], aes(log2(conc), value, fill=name, colour=name)) +
+  geom_point() +
+  facet_wrap(~name) +
+  geom_smooth(method="lm") +
+  scale_x_continuous(n.breaks=8) +
+  stat_regline_equation(label.x = 0, label.y = 15, size = 4, position="jitter") +
+  stat_cor(aes(label=..rr.label..), label.x=0, label.y=14, position="jitter") +
+  # Add RMSE annotation
+  geom_text(
+    data = spread_stats,
+    aes(x = 1, y = 13, 
+        label = paste0("RMSE = ", round(RMSE, 2), 
+                       "\nMAE = ", round(MAE, 2),
+                       "\nRSE = ", round(RSE, 2))),
+    inherit.aes = FALSE, size = 4, colour = "black"
+  ) +
+  xlab("log2 Transcript Concentration (aM/uL)") +
+  ylab("log2(Counts per Million)") +
+  scale_color_manual(values=c(cDNA="turquoise3", dRNA="navy")) +
+  scale_fill_manual(values=c(cDNA="turquoise3", dRNA="navy"))
+
+# Combined plot (without annotation, to keep clean)
+comb <- ggplot(ercc2_m, aes(log2(conc), value, fill=name, colour=name)) +
+  geom_point() +
+  geom_smooth(method="lm") +
+  scale_x_continuous(n.breaks=8) +
+  xlab("Transcript Concentration (aM/\u03BCL)") +
+  ylab("log2(Normalised CPM)") +
+  scale_color_manual(values=c(cDNA="turquoise3", dRNA="navy")) +
+  scale_fill_manual(values=c(cDNA="turquoise3", dRNA="navy")) +
+  theme(
+    legend.text = element_text(size = 14),
+    axis.text = element_text(size = 18),
+    axis.title.x = element_text(size=18),
+    axis.title.y = element_text(size=18)
+  )
+
+comb
+```
+
+```{r coverage}
+gb_cov=read.csv("genebody_cov.csv", header=TRUE)[, 1:5]
+gb_cov_m=pivot_longer(gb_cov, cols=c(2:5))
+protocol=strsplit2(gb_cov_m$name, "_")
+colnames(protocol)=c("Protocol", "Transcripts")
+gb_cov_all=data.frame(gb_cov_m, protocol)
+
+ggplot(gb_cov_all, aes(x=Percentile, y=value, colour=Protocol, linetype=Transcripts))+geom_line()+scale_colour_manual(values=c("turquoise3", "navy"))+scale_linetype_manual(values=c("dashed", "solid"))+xlab("Transcript Percentile (5'-3')")+
+  ylab("Normalised Coverage Depth")+
+theme(legend.text = element_text(size = 14),
+    axis.text = element_text(size = 18), 
+    axis.title.x=element_text(size=18),
+    axis.title.y=element_text(size=18)
+  )
+
+```
+
+```{r sensitivity vs sequencing depth}
+read.depth=read.table("FC_readdepth.txt", header=TRUE, skip=1)
+
+magic_fun <- function(x){ 
+  if_else(x>0, 1, 0)} 
+read.depth.detect=data.frame(lapply(read.depth[,3:8], magic_fun))
+read.depth.detect=data.frame(read.depth$conc, read.depth.detect)
+colnames(read.depth.detect)=c("Transcript Concentration", "1M", "250k", "2M", "500k", "5M", "GC")
+rdd_m=pivot_longer(read.depth.detect, cols=2:6)
+
+ggplot(rdd_m, aes(x=`Transcript Concentration`, y=value, colour=name, fill=name)) + geom_point(position="dodge")+scale_x_log10()+
+      stat_smooth(method="glm", se=FALSE, 
+                method.args = list(family=binomial)) +scale_colour_viridis(discrete=TRUE)+
+  xlab("log10 Transcript Concentration (aM/\U03BCL)")+
+  ylab("Probablity of Detection")+
+  theme(
+    legend.text = element_text(size = 14),
+    axis.text = element_text(size = 18), 
+    axis.title.x=element_text(size=18),
+    axis.title.y=element_text(size=18)
+  )
+
+```
+
+
+---
+title: "ERCC Spike-in Analysis"
+output: html_notebook
+---
+
+```{r setup}
+library(ggplot2)
+library(dplyr)
+library(reshape2)
+library(viridis)
+library(RColorBrewer)
+library(tidyr)
+library(ggpubr)
+library(edgeR)
+library(broom)
+source("customfunc.R")
+```
+
+```{r import and reformat}
+#Raw Data
+ercc_counts=read.csv("ercc_counts.csv", header=TRUE)
+
+#Log2 Normalisation of Read Counts
+ercc_norm=cpm(ercc_counts[, c(2,4)], log=TRUE, prior.count=1)
+ercc2=data.frame(ercc_counts[,1], ercc_norm, ercc_counts[,6:8])
+colnames(ercc2)=c("ID", "cDNA", "dRNA", "Length", "GC", "conc")
+
+#Calculate Concentration in pg/uL
+ercc2$molarmass=(ercc2$Length*320.5)+159
+ercc2$pg=ercc2$molarmass*(ercc2$conc*1E-6)
+ercc2_m=pivot_longer(ercc2, cols=c(2:3))
+```
+
+```{r read lengths}
+cdna_length=read.table("read_lengths_cdna.txt", header=FALSE, colClasses="numeric")
+drna_length=read.table("read_lengths_drna.txt", header=FALSE)
+
+#Hist
+breaks=c(seq(0, 2000, 100), 3000, 4000, 5000, 10000, 100000)
+hist_cdna=hist(cdna_length$V1, breaks=breaks, plot=FALSE)
+hist_drna=hist(drna_length$V1, breaks=breaks, plot=FALSE)
+
+#Bind together
+hist_lengths=data.frame(hist_cdna$breaks[1:25], hist_cdna$counts, hist_drna$counts)
+names(hist_lengths)=c("Length", "cDNA", "dRNA")
+hist_length_m=pivot_longer(hist_lengths, cols=(2:3))
+
+# Publication-quality read length distribution plot
+read_length_plot <- ggplot(hist_length_m, aes(x=Length, y=value, color=name)) +
+  geom_line(linewidth = 1) +
+  scale_x_continuous(limits = c(0, 2000), 
+                     breaks = seq(0, 2000, 400),
+                     expand = c(0.02, 0)) +
+  scale_y_continuous(expand = c(0.02, 0)) +
+  scale_color_manual(values = c("cDNA" = "#17BECF", "dRNA" = "#1F77B4"),
+                     name = "Protocol") +
+  labs(x = "Read Length (bp)",
+       y = "Number of Reads") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 8, color = "black"),
+    axis.title = element_text(size = 9, color = "black"),
+    legend.text = element_text(size = 8, color = "black"),
+    legend.title = element_text(size = 8, color = "black"),
+    legend.position = "top",
+    axis.line = element_line(color = "black", linewidth = 0.5),
+    axis.ticks = element_line(color = "black", linewidth = 0.5),
+    axis.ticks.length = unit(2, "pt"),
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA),
+    legend.key = element_blank()
+  )
+
+ggsave("read_length_distribution.pdf", read_length_plot, 
+       width = 4.5, height = 3.5, units = "in", dpi = 300)
+```
+
+```{r transcript detection vs concentration}
+#Annotate whether tx detected (at least 1 read)
+ercc_counts$dRNA=0
+ercc_counts$dRNA[ercc_counts$drna_read>0]=1
+ercc_counts$cDNA=0
+ercc_counts$cDNA[ercc_counts$cdna_read>0]=1
+ercc_counts_m=pivot_longer(ercc_counts, cols=c(9:10))
+
+# Publication-quality detection probability plot
+detection_plot <- ggplot(ercc_counts_m, aes(x=conc, y=value, color=name)) + 
+  geom_point(size = 1.2, alpha = 0.7) + 
+  scale_x_log10(breaks = c(0.01, 0.1, 1, 10, 100, 1000),
+                labels = c("0.01", "0.1", "1", "10", "100", "1000")) +
+  scale_y_continuous(limits = c(-0.05, 1.05), 
+                     breaks = seq(0, 1, 0.2),
+                     expand = c(0.02, 0)) +
+  stat_smooth(method = "glm", se = FALSE, linewidth = 1,
+              method.args = list(family = binomial)) +
+  scale_color_manual(values = c("cDNA" = "#17BECF", "dRNA" = "#1F77B4"),
+                     name = "Protocol") +
+  labs(x = "Transcript Concentration (aM/μL)",
+       y = "Probability of Detection") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 8, color = "black"),
+    axis.title = element_text(size = 9, color = "black"),
+    legend.text = element_text(size = 8, color = "black"),
+    legend.title = element_text(size = 8, color = "black"),
+    legend.position = "top",
+    axis.line = element_line(color = "black", linewidth = 0.5),
+    axis.ticks = element_line(color = "black", linewidth = 0.5),
+    axis.ticks.length = unit(2, "pt"),
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA),
+    legend.key = element_blank()
+  )
+
+ggsave("transcript_detection_probability.pdf", detection_plot, 
+       width = 4.5, height = 3.5, units = "in", dpi = 300)
+```
+
+```{r concentration vs CPM analysis}
+# Calculate statistics for linear models
+spread_stats <- ercc2_m %>%
+  filter(conc > 2) %>%
+  group_by(name) %>%
+  do({
+    fit <- lm(value ~ log2(conc), data = .)
+    data.frame(
+      RMSE = sqrt(mean(resid(fit)^2)),
+      MAE  = mean(abs(resid(fit))),
+      RSE  = sigma(fit),
+      R2   = summary(fit)$r.squared,
+      slope = coef(fit)[2],
+      intercept = coef(fit)[1]
+    )
+  })
+
+print(spread_stats)
+
+# Faceted concentration vs CPM plot with statistics
+faceted_conc_plot <- ggplot(ercc2_m[ercc2_m$conc>2,], 
+                            aes(log2(conc), value, color=name)) +
+  geom_point(size = 1, alpha = 0.7) +
+  facet_wrap(~name, labeller = labeller(name = c("cDNA" = "PCR-cDNA", "dRNA" = "Direct RNA"))) +
+  geom_smooth(method = "lm", linewidth = 1, se = TRUE, alpha = 0.2) +
+  scale_x_continuous(n.breaks = 6, expand = c(0.02, 0)) +
+  scale_y_continuous(expand = c(0.02, 0)) +
+  stat_regline_equation(label.x = 0, label.y = 15, size = 2.5, color = "black") +
+  stat_cor(label.x = 0, label.y = 14, size = 2.5, color = "black") +
+  # Add error metrics
+  geom_text(
+    data = spread_stats,
+    aes(x = 1, y = 13,
+        label = paste0("RMSE = ", round(RMSE, 2),
+                      "\nMAE = ", round(MAE, 2))),
+    inherit.aes = FALSE, size = 2.5, color = "black"
+  ) +
+  labs(x = expression("log"[2]*" Transcript Concentration (aM/μL)"),
+       y = expression("log"[2]*" CPM")) +
+  scale_color_manual(values = c("cDNA" = "#17BECF", "dRNA" = "#1F77B4")) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 8, color = "black"),
+    axis.title = element_text(size = 9, color = "black"),
+    strip.text = element_text(size = 8, color = "black"),
+    strip.background = element_rect(fill = "white", color = "black", linewidth = 0.5),
+    legend.position = "none",
+    axis.line = element_line(color = "black", linewidth = 0.5),
+    axis.ticks = element_line(color = "black", linewidth = 0.5),
+    axis.ticks.length = unit(2, "pt"),
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+
+ggsave("concentration_vs_cpm_faceted.pdf", faceted_conc_plot, 
+       width = 6, height = 3.5, units = "in", dpi = 300)
+
+# Combined concentration vs CPM plot
+combined_conc_plot <- ggplot(ercc2_m, aes(log2(conc), value, color=name)) +
+  geom_point(size = 1, alpha = 0.7) +
+  geom_smooth(method = "lm", linewidth = 1, se = TRUE, alpha = 0.2) +
+  scale_x_continuous(n.breaks = 6, expand = c(0.02, 0)) +
+  scale_y_continuous(expand = c(0.02, 0)) +
+  labs(x = expression("log"[2]*" Transcript Concentration (aM/μL)"),
+       y = expression("log"[2]*" Normalised CPM")) +
+  scale_color_manual(values = c("cDNA" = "#17BECF", "dRNA" = "#1F77B4"),
+                     name = "Protocol",
+                     labels = c("PCR-cDNA", "Direct RNA")) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 8, color = "black"),
+    axis.title = element_text(size = 9, color = "black"),
+    legend.text = element_text(size = 8, color = "black"),
+    legend.title = element_text(size = 8, color = "black"),
+    legend.position = "top",
+    axis.line = element_line(color = "black", linewidth = 0.5),
+    axis.ticks = element_line(color = "black", linewidth = 0.5),
+    axis.ticks.length = unit(2, "pt"),
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA),
+    legend.key = element_blank()
+  )
+
+ggsave("concentration_vs_cpm_combined.pdf", combined_conc_plot, 
+       width = 4.5, height = 4, units = "in", dpi = 300)
+```
+
+```{r coverage}
+gb_cov=read.csv("genebody_cov.csv", header=TRUE)[, 1:5]
+gb_cov_m=pivot_longer(gb_cov, cols=c(2:5))
+protocol=strsplit2(gb_cov_m$name, "_")
+colnames(protocol)=c("Protocol", "Transcripts")
+gb_cov_all=data.frame(gb_cov_m, protocol)
+
+# Publication-quality gene body coverage plot
+coverage_plot <- ggplot(gb_cov_all, aes(x=Percentile, y=value, 
+                                        color=Protocol, linetype=Transcripts)) +
+  geom_line(linewidth = 1) +
+  scale_x_continuous(breaks = seq(0, 100, 20), expand = c(0.02, 0)) +
+  scale_y_continuous(expand = c(0.02, 0)) +
+  scale_color_manual(values = c("cDNA" = "#17BECF", "dRNA" = "#1F77B4"),
+                     labels = c("PCR-cDNA", "Direct RNA")) +
+  scale_linetype_manual(values = c("dashed", "solid"),
+                        labels = c("All", "Selected")) +
+  labs(x = "Transcript Percentile (5' → 3')",
+       y = "Normalised Coverage Depth") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 8, color = "black"),
+    axis.title = element_text(size = 9, color = "black"),
+    legend.text = element_text(size = 8, color = "black"),
+    legend.title = element_text(size = 8, color = "black"),
+    legend.position = "top",
+    legend.box = "horizontal",
+    axis.line = element_line(color = "black", linewidth = 0.5),
+    axis.ticks = element_line(color = "black", linewidth = 0.5),
+    axis.ticks.length = unit(2, "pt"),
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA),
+    legend.key = element_blank()
+  ) +
+  guides(color = guide_legend(title = "Protocol", order = 1),
+         linetype = guide_legend(title = "Transcripts", order = 2))
+
+ggsave("gene_body_coverage.pdf", coverage_plot, 
+       width = 4.5, height = 4, units = "in", dpi = 300)
+```
+
+```{r sensitivity vs sequencing depth}
+read.depth=read.table("FC_readdepth.txt", header=TRUE, skip=1)
+
+magic_fun <- function(x){
+  if_else(x>0, 1, 0)
+} 
+
+read.depth.detect=data.frame(lapply(read.depth[,3:8], magic_fun))
+read.depth.detect=data.frame(read.depth$conc, read.depth.detect)
+colnames(read.depth.detect)=c("Transcript_Concentration", "1M", "250k", "2M", "500k", "5M", "GC")
+rdd_m=pivot_longer(read.depth.detect, cols=2:6)
+
+# Reorder levels for logical display
+rdd_m$name <- factor(rdd_m$name, levels = c("250k", "500k", "1M", "2M", "5M"))
+
+# Publication-quality sequencing depth sensitivity plot
+depth_sensitivity_plot <- ggplot(rdd_m, aes(x=Transcript_Concentration, y=value, 
+                                           color=name)) + 
+  geom_point(size = 1, alpha = 0.7, position = position_jitter(height = 0.02)) +
+  scale_x_log10(breaks = c(0.01, 0.1, 1, 10, 100, 1000),
+                labels = c("0.01", "0.1", "1", "10", "100", "1000")) +
+  scale_y_continuous(limits = c(-0.05, 1.05), 
+                     breaks = seq(0, 1, 0.2),
+                     expand = c(0.02, 0)) +
+  stat_smooth(method = "glm", se = FALSE, linewidth = 1,
+              method.args = list(family = binomial)) +
+  scale_color_viridis_d(name = "Read Depth",
+                        labels = c("250K", "500K", "1M", "2M", "5M")) +
+  labs(x = expression("log"[10]*" Transcript Concentration (aM/μL)"),
+       y = "Probability of Detection") +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 8, color = "black"),
+    axis.title = element_text(size = 9, color = "black"),
+    legend.text = element_text(size = 8, color = "black"),
+    legend.title = element_text(size = 8, color = "black"),
+    legend.position = "right",
+    axis.line = element_line(color = "black", linewidth = 0.5),
+    axis.ticks = element_line(color = "black", linewidth = 0.5),
+    axis.ticks.length = unit(2, "pt"),
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA),
+    legend.key = element_blank()
+  )
+
+ggsave("sequencing_depth_sensitivity.pdf", depth_sensitivity_plot, 
+       width = 5, height = 3.5, units = "in", dpi = 300)
+
+# Summary message
+cat("All ERCC analysis plots saved as publication-quality PDFs:\n")
+cat("- read_length_distribution.pdf\n")
+cat("- transcript_detection_probability.pdf\n")
+cat("- concentration_vs_cpm_faceted.pdf\n")
+cat("- concentration_vs_cpm_combined.pdf\n")
+cat("- gene_body_coverage.pdf\n")
+cat("- sequencing_depth_sensitivity.pdf\n")
+```

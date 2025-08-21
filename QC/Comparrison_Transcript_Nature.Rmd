@@ -1,0 +1,406 @@
+```{r}
+# Nature Journal Style Transcript Analysis Plots
+# Author: Rebecca L
+# Date: 2025-06-02
+# SKMM2 cDNA dRNA Transcript Comparison
+
+# Load required libraries
+library(ggvenn)
+library(dplyr)
+library(edgeR)
+library(stats)
+library(tidyr)
+library(forcats)
+library(ggpubr)
+library(biomaRt)
+library(AnnotationDbi)
+library(tidyverse)
+library(ggplot2)
+library(RColorBrewer)
+library(scales)
+
+# ==========================================
+# SETUP: Colors, Fonts, and Theme
+# ==========================================
+
+# Check available fonts and use appropriate one
+available_fonts <- c("Helvetica", "Arial", "sans")
+font_to_use <- available_fonts[available_fonts %in% names(pdfFonts())][1]
+if(is.na(font_to_use)) font_to_use <- "sans"
+
+# Define Nature journal color palette
+nature_colors <- c("#E64B35", "#4DBBD5", "#00A087", "#3C5488", "#F39B7F", "#8491B4")
+protocol_colors <- c("PCR-cDNA" = "#4DBBD5", "direct RNA" = "#E64B35")
+confidence_colors <- c("High" = "#8B0000", "Medium" = "#DC143C", "Low" = "#FFB6C1")
+length_colors <- c("<1000bp" = "#E64B35", "1000-3500bp" = "#4DBBD5", ">3500bp" = "#00A087")
+
+# Custom Nature-style theme
+nature_theme <- function() {
+  theme_classic() +
+  theme(
+    # Text elements
+    text = element_text(family = font_to_use, color = "black"),
+    axis.title = element_text(size = 8, color = "black"),
+    axis.text = element_text(size = 7, color = "black"),
+    axis.text.x = element_text(angle = 0, hjust = 0.5),
+    legend.title = element_text(size = 8, color = "black"),
+    legend.text = element_text(size = 7, color = "black"),
+    plot.title = element_text(size = 9, color = "black", hjust = 0.5),
+    strip.text = element_text(size = 8, color = "black"),
+    
+    # Lines and borders
+    axis.line = element_line(color = "black", size = 0.5),
+    axis.ticks = element_line(color = "black", size = 0.5),
+    
+    # Background
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA),
+    strip.background = element_rect(fill = "white", color = "black", size = 0.3),
+    
+    # Legend
+    legend.background = element_rect(fill = "white", color = NA),
+    legend.key = element_rect(fill = "white", color = NA),
+    legend.position = "right",
+    
+    # Margins
+    plot.margin = margin(t = 5, r = 5, b = 5, l = 5, unit = "pt")
+  )
+}
+
+# ==========================================
+# DATA IMPORT AND PROCESSING
+# ==========================================
+
+# Read in matrices - All reads
+cdna_tx <- read.table("./bambu_counts/cdna2_SKMM2_counts_transcript.txt", header = T, sep = "\t")
+drna_tx <- read.table("./bambu_counts/drnasub_SKMM2_counts_transcript.txt", header = T)
+
+# Full-length reads
+cdna_fl <- read.table("./bambu_counts/cdna2_SKMM2_fullLengthCounts_transcript.txt", header = T, sep = "\t")
+drna_fl <- read.table("./bambu_counts/drnasub_SKMM2_fullLengthCounts_transcript.txt", header = T, sep = "\t")
+
+# Unique Reads
+cdna_uni <- read.table("./bambu_counts/cdna2_SKMM2_uniqueCounts_transcript.txt", header = T, sep = "\t")
+drna_uni <- read.table("./bambu_counts/drnasub_SKMM2_uniqueCounts_transcript.txt", header = T, sep = "\t")
+
+# Filter out transcripts not detected at any level
+cdna_tx2 <- cdna_tx[rowSums(cdna_tx[3:8]) > 0,]
+drna_tx2 <- drna_tx[rowSums(drna_tx[3:8]) > 0,]
+
+# Subset full-length and unique counts to these filtered tx
+cdna_uni2 <- cdna_uni[cdna_uni$TXNAME %in% cdna_tx2$TXNAME,]
+drna_uni2 <- drna_uni[drna_uni$TXNAME %in% drna_tx2$TXNAME,]
+cdna_fl2 <- cdna_fl[cdna_fl$TXNAME %in% cdna_tx2$TXNAME,]
+drna_fl2 <- drna_fl[drna_fl$TXNAME %in% drna_tx2$TXNAME,]
+
+# Combine into list
+cdna <- list("all" = cdna_tx2, "full_length" = cdna_fl2, "unique" = cdna_uni2)
+drna <- list("all" = drna_tx2, "full_length" = drna_fl2, "unique" = drna_uni2)
+rm(cdna_tx, drna_tx, cdna_fl, drna_fl, cdna_uni, drna_uni)
+
+# Convert total counts to CPM
+cdna$cpm <- data.frame(cdna$all[,1:2], cpm(cdna$all[3:8], log = FALSE))
+drna$cpm <- data.frame(drna$all[,1:2], cpm(drna$all[3:8], log = FALSE))
+
+# Summary columns on each df
+cdna <- lapply(cdna, function(x){ 
+  x$sum <- rowSums(x[3:8]) 
+  x$detect <- rowSums((x[3:8]) > 0) 
+  x$mean <- rowMeans(x[3:8]) 
+  return(x)
+})           
+
+drna <- lapply(drna, function(x){ 
+  x$sum <- rowSums(x[3:8]) 
+  x$detect <- rowSums((x[3:8]) > 0) 
+  x$mean <- rowMeans(x[3:8]) 
+  return(x)
+})           
+
+# ==========================================
+# CONFIDENCE LEVELS CALCULATION
+# ==========================================
+
+# High confidence
+cdna_high <- Reduce(intersect, list(cdna$unique$TXNAME[cdna$unique$sum > 5], 
+                                   cdna$full_length$TXNAME[cdna$full_length$sum > 5]))
+drna_high <- Reduce(intersect, list(drna$unique$TXNAME[drna$unique$sum > 5], 
+                                   drna$full_length$TXNAME[drna$full_length$sum > 5]))
+
+# Low confidence
+cdna_low <- Reduce(intersect, list(cdna$full_length$TXNAME[cdna$full_length$sum == 0],
+                                  cdna$unique$TXNAME[cdna$unique$sum == 0]))
+drna_low <- Reduce(intersect, list(drna$full_length$TXNAME[drna$full_length$sum == 0],
+                                  drna$unique$TXNAME[drna$unique$sum == 0]))
+
+# Medium
+cdna_med <- cdna$all$TXNAME[!cdna$all$TXNAME %in% cdna_high & !cdna$all$TXNAME %in% cdna_low]
+drna_med <- drna$all$TXNAME[!drna$all$TXNAME %in% drna_high & !drna$all$TXNAME %in% drna_low]
+
+# List
+cdna_conf <- list("Low" = cdna_low, "Medium" = cdna_med, "High" = cdna_high)
+drna_conf <- list("Low" = drna_low, "Medium" = drna_med, "High" = drna_high)
+rm(cdna_low, cdna_med, cdna_high, drna_low, drna_med, drna_high)
+
+# ==========================================
+# FIGURE 1: Transcript Detection Confidence
+# ==========================================
+
+# Annotate confidence levels
+cdna$cpm$confidence <- "Low"
+cdna$cpm$confidence[cdna$cpm$TXNAME %in% cdna_conf$Medium] <- "Medium"
+cdna$cpm$confidence[cdna$cpm$TXNAME %in% cdna_conf$High] <- "High"
+
+drna$cpm$confidence <- "Low"
+drna$cpm$confidence[drna$cpm$TXNAME %in% drna_conf$Medium] <- "Medium"
+drna$cpm$confidence[drna$cpm$TXNAME %in% drna_conf$High] <- "High"
+
+# Create stacked data
+stacked <- data.frame(cdna = table(cdna$cpm$confidence), drna = table(drna$cpm$confidence))[,-3]
+stacked_m <- pivot_longer(stacked, cols = 2:3)
+colnames(stacked_m) <- c("conf", "protocol", "Number_of_Transcripts")
+stacked_m <- stacked_m %>% 
+  mutate(Protocol = as.factor(case_when(protocol == "cdna.Freq" ~ "PCR-cDNA", 
+                                       .default = "direct RNA")))
+
+# Create publication-quality stacked bar plot
+fig1 <- stacked_m %>% 
+  mutate(Confidence = fct_relevel(conf, "High", "Medium", "Low")) %>% 
+  ggplot(aes(x = Protocol, y = Number_of_Transcripts, fill = Confidence)) +
+  geom_bar(position = "stack", stat = "identity", color = "black", size = 0.3, width = 0.7) + 
+  scale_fill_manual(values = confidence_colors) +
+  scale_y_continuous(expand = c(0, 0), labels = comma_format()) +
+  labs(x = "Protocol", 
+       y = "Number of transcripts", 
+       fill = "Confidence") +
+  nature_theme() +
+  theme(legend.position = c(0.85, 0.85),
+        legend.background = element_rect(fill = "white", color = "black", size = 0.3),
+        legend.margin = margin(t = 2, r = 4, b = 2, l = 4, unit = "pt"))
+
+print(fig1)
+
+# Print summary statistics
+cat("Transcript Detection Summary:\n")
+cat("============================\n")
+for(protocol in c("PCR-cDNA", "direct RNA")) {
+  data_subset <- stacked_m[stacked_m$Protocol == protocol,]
+  total <- sum(data_subset$Number_of_Transcripts)
+  cat(sprintf("%s: %d total transcripts\n", protocol, total))
+  for(conf in c("High", "Medium", "Low")) {
+    count <- data_subset$Number_of_Transcripts[data_subset$conf == conf]
+    if(length(count) > 0) {
+      pct <- round(100 * count / total, 1)
+      cat(sprintf("  %s: %d (%s%%)\n", conf, count, pct))
+    }
+  }
+}
+
+# ==========================================
+# FIGURE 2: Confidence by Transcript Length
+# ==========================================
+
+# Load transcript annotation
+tx_annot <- read.csv(file = "tx_info.csv", header = TRUE)
+cdna$cpmannot <- left_join(cdna$cpm, tx_annot, by = "TXNAME")
+drna$cpmannot <- left_join(drna$cpm, tx_annot, by = "TXNAME")
+
+# Add quartile information
+cdna$cpmannot <- cdna$cpmannot %>% 
+  mutate(quartile = as.factor(case_when(Length > 999 & Length < 3500 ~ "1000-3500bp", 
+                                       Length > 3500 ~ ">3500bp", 
+                                       .default = "<1000bp")))
+
+drna$cpmannot <- drna$cpmannot %>% 
+  mutate(quartile = as.factor(case_when(Length > 999 & Length < 3500 ~ "1000-3500bp", 
+                                       Length > 3500 ~ ">3500bp", 
+                                       .default = "<1000bp")))
+
+# Create confidence by length data
+conf_length <- data.frame(cdna = table(cdna$cpmannot$confidence, cdna$cpmannot$quartile), 
+                         drna = table(drna$cpmannot$confidence, drna$cpmannot$quartile))[,-c(4:5)]
+stacked_length <- pivot_longer(conf_length, cols = 3:4)
+colnames(stacked_length) <- c("conf", "Quartile", "Protocol", "Number_of_Transcripts")
+stacked_length$Protocol[stacked_length$Protocol == "cdna.Freq"] <- "PCR-cDNA"
+stacked_length$Protocol[stacked_length$Protocol == "drna.Freq"] <- "direct RNA"
+
+# Figure 2A: Confidence by length (stacked by confidence)
+fig2a <- stacked_length %>% 
+  mutate(Confidence = fct_relevel(conf, "High", "Medium", "Low"), 
+         Length_Category = fct_relevel(Quartile, "<1000bp", "1000-3500bp", ">3500bp")) %>% 
+  ggplot(aes(x = Protocol, y = Number_of_Transcripts, fill = Confidence)) +
+  geom_bar(position = "stack", stat = "identity", color = "black", size = 0.2, width = 0.7) +
+  facet_wrap(~Length_Category, scales = "free_y") + 
+  scale_fill_manual(values = confidence_colors) +
+  scale_y_continuous(expand = c(0, 0), labels = comma_format()) +
+  labs(x = "Protocol", 
+       y = "Number of transcripts", 
+       fill = "Confidence") +
+  nature_theme() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 6),
+        strip.text = element_text(size = 7))
+
+print(fig2a)
+
+# Figure 2B: Length distribution by confidence (stacked by length)
+fig2b <- stacked_length %>% 
+  mutate(Confidence = fct_relevel(conf, "High", "Medium", "Low"),
+         Length_Category = fct_relevel(Quartile, "<1000bp", "1000-3500bp", ">3500bp")) %>% 
+  ggplot(aes(x = Protocol, y = Number_of_Transcripts, fill = Length_Category)) +
+  geom_bar(position = "stack", stat = "identity", color = "black", size = 0.2, width = 0.7) +
+  facet_wrap(~Confidence, scales = "free_y") +
+  scale_fill_manual(values = length_colors, name = "Length") +
+  scale_y_continuous(expand = c(0, 0), labels = comma_format()) +
+  labs(x = "Protocol", 
+       y = "Number of transcripts", 
+       fill = "Length") +
+  nature_theme() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 6),
+        strip.text = element_text(size = 7))
+
+print(fig2b)
+
+# ==========================================
+# FIGURE 3: Venn Diagrams (Improved)
+# ==========================================
+
+# Create custom Venn diagram function for better control
+create_nature_venn <- function(data_list, title, colors) {
+  ggvenn(data = data_list,
+         fill_color = colors,
+         auto_scale = TRUE, 
+         show_percentage = FALSE,
+         set_name_size = 3,
+         text_size = 3) +
+    labs(title = title) +
+    theme_void() +
+    theme(plot.title = element_text(size = 8, hjust = 0.5, family = font_to_use),
+          plot.margin = margin(t = 5, r = 5, b = 5, l = 5, unit = "pt"))
+}
+
+# Get overlap statistics for reporting
+overlap <- gplots::venn(data = list("dRNA" = drna$all$TXNAME, "cDNA" = cdna$all$TXNAME), 
+                       show.plot = FALSE, intersections = TRUE)
+lists <- attr(overlap, "intersections")
+shared_tx <- lists$`dRNA:cDNA`
+
+# Create Venn diagrams
+venn_colors <- c("#4DBBD5", "#E64B35")  # cDNA blue, dRNA red
+
+fig3a <- create_nature_venn(list("cDNA" = cdna$all$TXNAME, "dRNA" = drna$all$TXNAME),
+                           "All transcripts", venn_colors)
+
+fig3b <- create_nature_venn(list("cDNA" = cdna_conf$High, "dRNA" = drna_conf$High),
+                           "High confidence", venn_colors)
+
+fig3c <- create_nature_venn(list("cDNA" = cdna_conf$Medium, "dRNA" = drna_conf$Medium),
+                           "Medium confidence", venn_colors)
+
+fig3d <- create_nature_venn(list("cDNA" = cdna_conf$Low, "dRNA" = drna_conf$Low),
+                           "Low confidence", venn_colors)
+
+# Combine Venn diagrams
+fig3_combined <- ggarrange(fig3a, fig3b, fig3c, fig3d,
+                          ncol = 2, nrow = 2,
+                          labels = c("a", "b", "c", "d"),
+                          font.label = list(size = 9, face = "bold"))
+
+print(fig3_combined)
+
+# Print overlap statistics
+cat("\nTranscript Overlap Analysis:\n")
+cat("============================\n")
+cat("Total unique transcripts:\n")
+cat(sprintf("  cDNA only: %d\n", length(setdiff(cdna$all$TXNAME, drna$all$TXNAME))))
+cat(sprintf("  dRNA only: %d\n", length(setdiff(drna$all$TXNAME, cdna$all$TXNAME))))
+cat(sprintf("  Shared: %d\n", length(shared_tx)))
+
+# ==========================================
+# FIGURE 4: Length Distribution Analysis
+# ==========================================
+
+# Create combined length distribution plot
+length_summary <- bind_rows(
+  cdna$cpmannot %>% dplyr::select(TXNAME, Length, confidence) %>% mutate(Protocol = "PCR-cDNA"),
+  drna$cpmannot %>% dplyr::select(TXNAME, Length, confidence) %>% mutate(Protocol = "direct RNA")
+) %>% filter(!is.na(Length))
+
+fig4 <- length_summary %>%
+  mutate(Confidence = fct_relevel(confidence, "High", "Medium", "Low")) %>%
+  ggplot(aes(x = log10(Length), fill = Protocol)) +
+  geom_density(alpha = 0.6, color = "black", size = 0.3) +
+  facet_wrap(~Confidence, scales = "free_y") +
+  scale_fill_manual(values = protocol_colors) +
+  scale_x_continuous(breaks = c(2, 3, 4, 5), 
+                     labels = c("100", "1K", "10K", "100K")) +
+  labs(x = "Transcript length (bp)",
+       y = "Density",
+       fill = "Protocol") +
+  nature_theme()
+
+print(fig4)
+
+# ==========================================
+# Save all plots for publication
+# ==========================================
+
+# Method 1: Save with Cairo for better font handling
+if(require("Cairo", quietly = TRUE)) {
+  # Save individual figures
+  ggsave("Figure1_TranscriptConfidence.pdf", fig1, width = 85, height = 60, units = "mm", 
+         dpi = 300, device = cairo_pdf)
+  ggsave("Figure2A_ConfidenceByLength.pdf", fig2a, width = 130, height = 80, units = "mm", 
+         dpi = 300, device = cairo_pdf)
+  ggsave("Figure2B_LengthByConfidence.pdf", fig2b, width = 130, height = 80, units = "mm", 
+         dpi = 300, device = cairo_pdf)
+  ggsave("Figure3_VennDiagrams.pdf", fig3_combined, width = 130, height = 100, units = "mm", 
+         dpi = 300, device = cairo_pdf)
+  ggsave("Figure4_LengthDistribution.pdf", fig4, width = 130, height = 80, units = "mm", 
+         dpi = 300, device = cairo_pdf)
+  
+  # Save as PNG alternatives
+  ggsave("Figure1_TranscriptConfidence.png", fig1, width = 85, height = 60, units = "mm", dpi = 300)
+  ggsave("Figure2A_ConfidenceByLength.png", fig2a, width = 130, height = 80, units = "mm", dpi = 300)
+  ggsave("Figure2B_LengthByConfidence.png", fig2b, width = 130, height = 80, units = "mm", dpi = 300)
+  ggsave("Figure3_VennDiagrams.png", fig3_combined, width = 130, height = 100, units = "mm", dpi = 300)
+  ggsave("Figure4_LengthDistribution.png", fig4, width = 130, height = 80, units = "mm", dpi = 300)
+  
+  cat("All plots saved successfully with Cairo!\n")
+} else {
+  # Fallback method: Use PNG format
+  ggsave("Figure1_TranscriptConfidence.png", fig1, width = 85, height = 60, units = "mm", dpi = 300)
+  ggsave("Figure2A_ConfidenceByLength.png", fig2a, width = 130, height = 80, units = "mm", dpi = 300)
+  ggsave("Figure2B_LengthByConfidence.png", fig2b, width = 130, height = 80, units = "mm", dpi = 300)
+  ggsave("Figure3_VennDiagrams.png", fig3_combined, width = 130, height = 100, units = "mm", dpi = 300)
+  ggsave("Figure4_LengthDistribution.png", fig4, width = 130, height = 80, units = "mm", dpi = 300)
+  
+  cat("Plots saved as PNG format (install Cairo package for PDF support)\n")
+  cat("To install Cairo: install.packages('Cairo')\n")
+}
+
+# Alternative PDF saving method
+tryCatch({
+  pdf("TranscriptAnalysis_AllFigures.pdf", width = 170/25.4, height = 200/25.4)
+  print(fig1)
+  print(fig2a)
+  print(fig2b)
+  print(fig3_combined)
+  print(fig4)
+  dev.off()
+  
+  cat("Combined PDF file also saved!\n")
+}, error = function(e) {
+  cat("Combined PDF saving failed:", e$message, "\n")
+})
+
+cat("\n==========================================\n")
+cat("TRANSCRIPT ANALYSIS FIGURES GENERATED\n")
+cat("==========================================\n")
+cat("Figure 1: Overall transcript confidence\n")
+cat("Figure 2A: Confidence by transcript length\n") 
+cat("Figure 2B: Length distribution by confidence\n")
+cat("Figure 3: Venn diagrams (4 panels)\n")
+cat("Figure 4: Length distribution density plots\n")
+cat("==========================================\n")
+
+```

@@ -1,0 +1,176 @@
+`---
+title: "SKMM2 cDNA DTU - IL6"
+author: "Rebecca L"
+date: "2024-08-15"
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+library(DESeq2)
+library(DEXSeq)
+library(stageR)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(pheatmap)
+library(tximport)
+library(GenomicFeatures)
+library(txdbmaker)
+library('biomaRt')
+library(tidyverse)
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_knit$set(root.dir="~/Documents/Bioinformatics/MyelomaCL/DTU cDNA dRNAsub/")
+```
+
+
+
+```{r import data}
+
+#Import tx counts
+cts=read.delim("cdna2_SKMM2_counts_transcript.txt", sep="\t")
+cts=cts[rowSums(cts[3:8])>0,]
+dim(cts)
+
+#Read sample info
+allinfo=read.csv("sampleinfo.csv", header=TRUE)[1:6,]
+all(colnames(cts[3:8])==allinfo$sample)
+
+#Generate txdb
+txdb=loadDb("gencode.v46.annotation.sqlite")
+k = keys(txdb, keytype = "GENEID")
+txdf = AnnotationDbi::select(txdb, k, "TXNAME", "GENEID")
+
+#Add HGNC symbols to counts
+ensembl <- useEnsembl(biomart = 'genes', 
+                         dataset = 'hsapiens_gene_ensembl')
+
+G_list <- getBM(filters= "ensembl_transcript_id_version", attributes= c("ensembl_transcript_id_version","hgnc_symbol" ),values=cts$TXNAME, mart= ensembl)
+annot=left_join(cts, G_list, by=join_by(TXNAME==ensembl_transcript_id_version))
+
+rm(txdb)
+```
+
+## Including Plots
+
+
+```{r data filtering IGF1 vs ctrl, echo=FALSE}
+
+samps=allinfo
+samps$Condition=as.factor(samps$Condition)
+samps$Condition = relevel(samps$Condition, ref = "Control")
+levels(samps$Condition)
+colnames(samps)=c("sample_id", "Experiment", "Condition")
+
+#Subset txdf to transcripts detected in dataset
+txdf.sub=txdf[match(cts$TXNAME, txdf$TXNAME),]
+head(txdf.sub)
+
+counts=data.frame(gene_id=txdf.sub$GENEID, feature_id=txdf.sub$TXNAME, cts[,3:8])
+counts=counts[!duplicated(counts$feature_id),]
+counts=counts[!is.na(counts$gene_id),]
+
+d=DRIMSeq::dmDSdata(counts=counts, samples=samps)
+d
+
+#Filter with DRIMSeq dmFilter
+n=nrow(samps)
+n.small=min(table(samps$Condition))
+d=DRIMSeq::dmFilter(d, 
+                    min_samps_feature_expr=n.small, min_feature_expr=5, 
+                    min_samps_feature_prop=n.small,   min_feature_prop=0.1,
+                    min_samps_gene_expr=n, min_gene_expr=5)
+d
+```
+
+```{r DEXSeq Analysis}
+
+countData = round(as.matrix(counts(d)[,c(3:8)]))
+
+
+dxd = DEXSeqDataSet(countData = countData, sampleData = samps, 
+design = ~sample + exon + Condition:exon, 
+featureID = counts(d)$feature_id, groupID = counts(d)$gene_id)
+
+dxd=estimateSizeFactors(dxd)
+dxd=estimateDispersions(dxd)
+dxd=testForDEU(dxd, reducedModel=~sample+exon+Condition)
+
+#Extract Results
+dxr=DEXSeqResults(dxd)
+qvalDxr=perGeneQValue(dxr)
+head(dxr)
+head(qvalDxr)
+
+#Gene-wise stats
+dxr.g=data.frame(gene=names(qvalDxr), qvalDxr)
+head(dxr.g)
+dim(dxr.g[dxr.g$qval<0.05,])
+
+#Transcript-wise stats
+dxr.t=as.data.frame(dxr[, c("featureID", "groupID", "pvalue")])
+head(dxr.t)
+dim(dxr[dxr$padj<0.05,])
+
+```
+
+```{r stage-wise testing with stageR}
+#PScreen (genewise qvalues), p confirmation (transcript-wise p values) and tx2gene table
+pScreen=qvalDxr
+head(pScreen)
+
+pConfirmation=matrix(dxr$pvalue[!is.na(dxr$pvalue)], ncol=1)
+dimnames(pConfirmation)=list(c(dxr$featureID[!is.na(dxr$pvalue)]), c("transcript"))
+head(pConfirmation)
+
+tx2gene=data.frame(dxr.t[!is.na(dxr.t$pvalue), c("featureID", "groupID")])
+
+#Build stageR object and perform p-value adjustment
+stageRObj=stageRTx(pScreen=pScreen, pConfirmation=pConfirmation, pScreenAdjusted=TRUE, tx2gene=tx2gene)
+stageRObj=stageWiseAdjustment(object=stageRObj, method="dtu", alpha=0.05)
+
+#Retrieve significant genes and transcripts
+head(getSignificantGenes(stageRObj))
+head(getSignificantTx(stageRObj))
+padj=getAdjustedPValues(stageRObj, order=FALSE, onlySignificantGenes = TRUE)
+
+#Number of significant genes + transcripts
+length(unique(padj[padj$gene < 0.05,]$geneID))
+table(padj$transcript < 0.05)
+
+```
+
+```{r pull out results and export}
+#Pull out normalised expression
+dex.norm = cbind(as.data.frame(stringr::str_split_fixed(rownames(counts(dxd)), ":", 2)), as.data.frame(counts(dxd, normalized = TRUE)))[,1:8]
+colnames(dex.norm) = c("groupID", "featureID", as.character(colData(dxd)$sample_id[1:6]))
+row.names(dex.norm) = NULL
+
+
+#average per treatment condition
+dex.mean = as.data.frame(sapply( levels(samps$Condition), 
+function(lvl) rowMeans(dex.norm[, 3:ncol(dex.norm)][, samps$Condition == lvl, drop = FALSE]) ))
+
+#LogFC between conditions
+dex.log2fc = log2((dex.mean[2]+0.1)/(dex.mean[1]+0.1))
+colnames(dex.log2fc) = "log2fc"
+rownames(dex.log2fc) = dex.norm$featureID
+
+#Merge normalised counts and tx annotation to one df
+dexData = cbind(dex.norm[,1:2], dex.mean, dex.norm[, 3:ncol(dex.norm)])
+dexData = dexData[order(dexData$groupID, dexData$featureID),]
+
+#Merge stats and tx annotation to one df
+dexDTU=merge(padj, dex.log2fc, by.x = "txID", by.y = "row.names")
+dexDTU = dexDTU[order(dexDTU$geneID, dexDTU$txID),]
+
+#Add annotation to counts
+tx_info=read.csv("tx_v46_info.csv", header=TRUE)
+dexData=left_join(dexData, tx_info, by=join_by(featureID==TXNAME))
+dexDTU=left_join(dexDTU, tx_info, by=join_by(txID==TXNAME))
+```
+
+
+
+`

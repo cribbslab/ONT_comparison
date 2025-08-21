@@ -1,0 +1,451 @@
+```{r}
+# Nature Journal Style Gene Overlap Analysis
+# Author: Rebecca L
+# Date: 2024-10-23
+# SKMM2 cDNA vs dRNA Gene - Enhanced Overlap Analysis
+
+# Load required libraries
+library(ggvenn)
+library(dplyr)
+library(edgeR)
+library(tidyr)
+library(forcats)
+library(ggpubr)
+library(ggplot2)
+library(knitr)
+library(patchwork)
+library(UpSetR)
+library(scales)
+library(RColorBrewer)
+
+# Resolve namespace conflicts
+select <- dplyr::select
+
+# ==========================================
+# SETUP: Colors, Fonts, and Theme
+# ==========================================
+
+# Check available fonts and use appropriate one
+available_fonts <- c("Helvetica", "Arial", "sans")
+font_to_use <- available_fonts[available_fonts %in% names(pdfFonts())][1]
+if(is.na(font_to_use)) font_to_use <- "sans"
+
+# Nature journal color palette (colorblind friendly)
+nature_colors <- c("#E64B35", "#4DBBD5", "#00A087", "#3C5488", "#F39B7F", "#8491B4")
+protocol_colors <- c("PCR-cDNA" = "#4DBBD5", "Direct RNA" = "#E64B35")
+confidence_colors <- c("High" = "#00A087", "Medium" = "#4DBBD5", "Low" = "#F39B7F")
+
+# Enhanced Nature publication theme
+nature_theme <- function() {
+  theme_classic() +
+  theme(
+    # Text elements
+    text = element_text(family = font_to_use, color = "black"),
+    axis.title = element_text(size = 8, color = "black"),
+    axis.text = element_text(size = 7, color = "black"),
+    legend.title = element_text(size = 8, color = "black"),
+    legend.text = element_text(size = 7, color = "black"),
+    plot.title = element_text(size = 9, color = "black", hjust = 0.5),
+    plot.subtitle = element_text(size = 8, color = "black", hjust = 0.5),
+    strip.text = element_text(size = 8, color = "black"),
+    
+    # Lines and borders
+    axis.line = element_line(color = "black", size = 0.5),
+    axis.ticks = element_line(color = "black", size = 0.5),
+    
+    # Background
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA),
+    strip.background = element_rect(fill = "white", color = "black", size = 0.3),
+    
+    # Legend
+    legend.background = element_rect(fill = "white", color = NA),
+    legend.key = element_rect(fill = "white", color = NA),
+    legend.position = "right",
+    
+    # Margins
+    plot.margin = margin(t = 5, r = 5, b = 5, l = 5, unit = "pt")
+  )
+}
+
+# ==========================================
+# DATA IMPORT AND PROCESSING
+# ==========================================
+
+# Import matrices
+cdna_counts <- read.table("cdna2_SKMM2_counts_gene.txt", sep = "\t", header = TRUE)
+drna_counts <- read.table("drnasub_SKMM2_counts_gene.txt", sep = "\t", header = TRUE)
+
+# Only keep genes with at least 1 count in at least 1 sample
+cdna_filt <- cdna_counts[rowSums(cdna_counts[2:7]) > 0,]
+drna_filt <- drna_counts[rowSums(drna_counts[2:7]) > 0,]
+
+# Convert raw counts to CPM
+cdna_cpm <- as.data.frame(cpm(cdna_filt[2:7], log = FALSE))
+cdna_cpm$GENEID <- cdna_filt$GENEID
+drna_cpm <- as.data.frame(cpm(drna_filt[2:7], log = FALSE))
+drna_cpm$GENEID <- drna_filt$GENEID
+
+# ==========================================
+# CONFIDENCE CLASSIFICATION
+# ==========================================
+
+# Define confidence levels based on detection patterns
+cdna_cpm <- cdna_cpm %>%
+  mutate(mean = rowMeans(cdna_cpm[1:6]),
+         detect = rowSums(cdna_cpm[1:6] > 0),
+         conf = case_when(detect < 3 ~ "Low",
+                         detect == 6 ~ "High",
+                         .default = "Medium"))
+
+drna_cpm <- drna_cpm %>%
+  mutate(mean = rowMeans(drna_cpm[1:6]),
+         detect = rowSums(drna_cpm[1:6] > 0),
+         conf = case_when(detect < 3 ~ "Low",
+                         detect == 6 ~ "High",
+                         .default = "Medium"))
+
+# ==========================================
+# FIGURE 1: Gene Detection by Confidence Level
+# ==========================================
+
+# Create summary for stacked bar plot
+stacked <- data.frame(cdna = table(cdna_cpm$conf), drna = table(drna_cpm$conf))[,-3]
+stacked_m <- pivot_longer(stacked, cols = 2:3)
+colnames(stacked_m) <- c("conf", "Protocol", "Number_of_Genes")
+stacked_m <- stacked_m %>% 
+  mutate(Protocol = as.factor(case_when(Protocol == "cdna.Freq" ~ "PCR-cDNA",
+                                       .default = "Direct RNA")))
+
+# Create publication-quality stacked bar plot
+fig1 <- stacked_m %>% 
+  mutate(Confidence = fct_relevel(conf, "High", "Medium", "Low")) %>% 
+  ggplot(aes(x = Protocol, y = Number_of_Genes, fill = Confidence)) +
+  geom_bar(position = "stack", stat = "identity", width = 0.7, color = "black", size = 0.3) + 
+  scale_fill_manual(values = confidence_colors) +
+  scale_y_continuous(expand = c(0, 0), labels = comma_format()) +
+  labs(x = "Protocol", 
+       y = "Number of genes", 
+       fill = "Confidence") +
+  nature_theme() +
+  theme(legend.position = c(0.85, 0.85),
+        legend.background = element_rect(fill = "white", color = "black", size = 0.3),
+        legend.margin = margin(t = 2, r = 4, b = 2, l = 4, unit = "pt"))
+
+print(fig1)
+
+# Print summary statistics
+total_cdna <- sum(stacked_m$Number_of_Genes[stacked_m$Protocol == "PCR-cDNA"])
+total_drna <- sum(stacked_m$Number_of_Genes[stacked_m$Protocol == "Direct RNA"])
+cat("Gene Detection Summary:\n")
+cat("======================\n")
+cat(sprintf("PCR-cDNA: %d genes\n", total_cdna))
+cat(sprintf("Direct RNA: %d genes\n", total_drna))
+
+# ==========================================
+# FIGURE 2: Venn Diagrams by Confidence
+# ==========================================
+
+# Create gene sets for analysis
+gene_sets <- list(
+  cDNA_High = cdna_cpm$GENEID[cdna_cpm$conf == "High"],
+  cDNA_Medium = cdna_cpm$GENEID[cdna_cpm$conf == "Medium"],
+  cDNA_Low = cdna_cpm$GENEID[cdna_cpm$conf == "Low"],
+  dRNA_High = drna_cpm$GENEID[drna_cpm$conf == "High"],
+  dRNA_Medium = drna_cpm$GENEID[drna_cpm$conf == "Medium"],
+  dRNA_Low = drna_cpm$GENEID[drna_cpm$conf == "Low"]
+)
+
+# Function to create publication-quality Venn diagrams
+create_nature_venn <- function(conf_level) {
+  cdna_genes <- gene_sets[[paste0("cDNA_", conf_level)]]
+  drna_genes <- gene_sets[[paste0("dRNA_", conf_level)]]
+  
+  gene_list <- list("PCR-cDNA" = cdna_genes, "Direct RNA" = drna_genes)
+  
+  ggvenn(gene_list,
+         fill_color = c(protocol_colors["PCR-cDNA"], protocol_colors["Direct RNA"]),
+         fill_alpha = 0.6,
+         stroke_color = "black",
+         stroke_size = 0.5,
+         text_size = 3,
+         text_color = "black",
+         show_percentage = FALSE,
+         auto_scale = TRUE,
+         set_name_size = 3) +
+    labs(title = paste(conf_level, "confidence")) +
+    theme_void() +
+    theme(plot.title = element_text(size = 8, hjust = 0.5, family = font_to_use),
+          plot.margin = margin(t = 5, r = 5, b = 5, l = 5, unit = "pt"))
+}
+
+# Create individual Venn diagrams
+fig2a <- create_nature_venn("High")
+fig2b <- create_nature_venn("Medium")
+fig2c <- create_nature_venn("Low")
+
+# Combine Venn diagrams
+fig2_combined <- ggarrange(fig2a, fig2b, fig2c,
+                          ncol = 3, nrow = 1,
+                          labels = c("a", "b", "c"),
+                          font.label = list(size = 9, face = "bold"))
+
+print(fig2_combined)
+
+# ==========================================
+# FIGURE 3: Quantitative Overlap Analysis
+# ==========================================
+
+# Calculate overlaps for each confidence level
+calculate_overlap <- function(set1, set2) {
+  length(intersect(set1, set2))
+}
+
+# Create overlap data
+confidence_levels <- c("High", "Medium", "Low")
+overlap_data <- data.frame()
+
+for (conf in confidence_levels) {
+  cdna_genes <- gene_sets[[paste0("cDNA_", conf)]]
+  drna_genes <- gene_sets[[paste0("dRNA_", conf)]]
+  
+  overlap <- calculate_overlap(cdna_genes, drna_genes)
+  cdna_only <- length(cdna_genes) - overlap
+  drna_only <- length(drna_genes) - overlap
+  
+  temp_data <- data.frame(
+    Confidence = conf,
+    PCR_cDNA_only = cdna_only,
+    Overlap = overlap,
+    Direct_RNA_only = drna_only
+  )
+  
+  overlap_data <- rbind(overlap_data, temp_data)
+}
+
+# Reshape for plotting
+overlap_long <- overlap_data %>%
+  pivot_longer(cols = c("PCR_cDNA_only", "Overlap", "Direct_RNA_only"),
+               names_to = "Category", values_to = "Count") %>%
+  mutate(Category = factor(Category, levels = c("PCR_cDNA_only", "Overlap", "Direct_RNA_only")),
+         Confidence = factor(Confidence, levels = c("High", "Medium", "Low")))
+
+# Define category colors
+category_colors <- c("PCR_cDNA_only" = protocol_colors["PCR-cDNA"],
+                    "Overlap" = "#00A087",
+                    "Direct_RNA_only" = protocol_colors["Direct RNA"])
+
+# Create quantitative overlap plot
+fig3 <- ggplot(overlap_long, aes(x = Confidence, y = Count, fill = Category)) +
+  geom_bar(stat = "identity", position = "stack", width = 0.7, color = "black", size = 0.3) +
+  scale_fill_manual(values = category_colors,
+                    labels = c("PCR-cDNA only", "Overlap", "Direct RNA only"),
+                    name = "Detection") +
+  scale_y_continuous(expand = c(0, 0), labels = comma_format()) +
+  labs(x = "Confidence level",
+       y = "Number of genes") +
+  nature_theme() +
+  geom_text(data = overlap_long %>% filter(Count > 100),
+            aes(label = comma(Count)),
+            position = position_stack(vjust = 0.5),
+            color = "white",
+            fontface = "bold",
+            size = 2.5)
+
+print(fig3)
+
+# ==========================================
+# FIGURE 4: Jaccard Index Analysis
+# ==========================================
+
+# Calculate Jaccard index
+jaccard_index <- function(set1, set2) {
+  intersection <- length(intersect(set1, set2))
+  union_size <- length(union(set1, set2))
+  return(intersection / union_size)
+}
+
+# Create comprehensive summary
+summary_data <- data.frame()
+for (conf in c("High", "Medium", "Low", "All")) {
+  if (conf == "All") {
+    cdna_genes <- cdna_cpm$GENEID
+    drna_genes <- drna_cpm$GENEID
+  } else {
+    cdna_genes <- gene_sets[[paste0("cDNA_", conf)]]
+    drna_genes <- gene_sets[[paste0("dRNA_", conf)]]
+  }
+  
+  overlap <- length(intersect(cdna_genes, drna_genes))
+  jaccard <- jaccard_index(cdna_genes, drna_genes)
+  
+  temp_data <- data.frame(
+    Confidence = conf,
+    cDNA_Total = length(cdna_genes),
+    dRNA_Total = length(drna_genes),
+    Overlap = overlap,
+    cDNA_Only = length(cdna_genes) - overlap,
+    dRNA_Only = length(drna_genes) - overlap,
+    Jaccard_Index = round(jaccard, 3),
+    Overlap_Percentage = round((overlap / length(union(cdna_genes, drna_genes))) * 100, 1)
+  )
+  
+  summary_data <- rbind(summary_data, temp_data)
+}
+
+# Create Jaccard index visualization
+fig4 <- ggplot(summary_data[1:3,], aes(x = factor(Confidence, levels = c("High", "Medium", "Low")),
+                                       y = Jaccard_Index, fill = Confidence)) +
+  geom_bar(stat = "identity", width = 0.7, color = "black", size = 0.3) +
+  scale_fill_manual(values = confidence_colors) +
+  scale_y_continuous(breaks = seq(0, 1, 0.2), limits = c(0, 1), expand = c(0, 0)) +
+  labs(x = "Confidence level",
+       y = "Jaccard index") +
+  nature_theme() +
+  theme(legend.position = "none") +
+  geom_text(aes(label = sprintf("%.3f", Jaccard_Index)),
+            vjust = -0.5,
+            fontface = "bold",
+            size = 3)
+
+print(fig4)
+
+# ==========================================
+# FIGURE 5: Protocol Comparison Heatmap
+# ==========================================
+
+# Create comparison matrix for heatmap
+comparison_matrix <- matrix(0, nrow = 3, ncol = 4)
+rownames(comparison_matrix) <- c("High", "Medium", "Low")
+colnames(comparison_matrix) <- c("PCR-cDNA", "Overlap", "Direct RNA", "Jaccard")
+
+for(i in 1:3) {
+  conf <- rownames(comparison_matrix)[i]
+  row_data <- overlap_data[overlap_data$Confidence == conf,]
+  comparison_matrix[i, "PCR-cDNA"] <- row_data$PCR_cDNA_only
+  comparison_matrix[i, "Overlap"] <- row_data$Overlap  
+  comparison_matrix[i, "Direct RNA"] <- row_data$Direct_RNA_only
+  comparison_matrix[i, "Jaccard"] <- summary_data$Jaccard_Index[summary_data$Confidence == conf]
+}
+
+# Convert to long format for ggplot
+heatmap_data <- as.data.frame(comparison_matrix) %>%
+  mutate(Confidence = rownames(.)) %>%
+  pivot_longer(cols = -Confidence, names_to = "Metric", values_to = "Value") %>%
+  mutate(Confidence = factor(Confidence, levels = c("High", "Medium", "Low")),
+         Metric = factor(Metric, levels = c("PCR-cDNA", "Overlap", "Direct RNA", "Jaccard")))
+
+# Create normalized values for better visualization
+heatmap_data <- heatmap_data %>%
+  group_by(Metric) %>%
+  mutate(Normalized = ifelse(Metric == "Jaccard", Value, scale(Value)[,1])) %>%
+  ungroup()
+
+# Create summary visualization
+fig5 <- ggplot(heatmap_data, aes(x = Metric, y = Confidence, fill = Normalized)) +
+  geom_tile(color = "white", size = 0.5) +
+  scale_fill_gradient2(low = "#4DBBD5", mid = "white", high = "#E64B35",
+                      midpoint = 0, name = "Scaled\nValue") +
+  labs(x = "Detection category",
+       y = "Confidence level") +
+  nature_theme() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 7)) +
+  geom_text(aes(label = ifelse(Metric == "Jaccard", sprintf("%.3f", Value), 
+                              comma(Value, accuracy = 1))),
+            color = "black", size = 2.5)
+
+print(fig5)
+
+# ==========================================
+# Create Publication Summary Table
+# ==========================================
+
+# Create publication-ready table
+summary_table_display <- summary_data %>%
+  mutate(
+    `PCR-cDNA Total` = format(cDNA_Total, big.mark = ","),
+    `Direct RNA Total` = format(dRNA_Total, big.mark = ","),
+    `Overlap` = format(Overlap, big.mark = ","),
+    `PCR-cDNA Only` = format(cDNA_Only, big.mark = ","),
+    `Direct RNA Only` = format(dRNA_Only, big.mark = ","),
+    `Jaccard Index` = sprintf("%.3f", Jaccard_Index),
+    `Overlap (%)` = paste0(Overlap_Percentage, "%")
+  ) %>%
+  select(Confidence, `PCR-cDNA Total`, `Direct RNA Total`, Overlap,
+         `PCR-cDNA Only`, `Direct RNA Only`, `Jaccard Index`, `Overlap (%)`)
+
+print(kable(summary_table_display,
+           caption = "Gene detection overlap summary by confidence level",
+           align = c("l", rep("r", 7))))
+
+# ==========================================
+# Save all plots for publication
+# ==========================================
+
+# Method 1: Save with Cairo for better font handling
+if(require("Cairo", quietly = TRUE)) {
+  # Save individual figures
+  ggsave("Figure1_GeneConfidence.pdf", fig1, width = 85, height = 60, units = "mm", 
+         dpi = 300, device = cairo_pdf)
+  ggsave("Figure2_VennDiagrams.pdf", fig2_combined, width = 170, height = 60, units = "mm", 
+         dpi = 300, device = cairo_pdf)
+  ggsave("Figure3_OverlapAnalysis.pdf", fig3, width = 85, height = 60, units = "mm", 
+         dpi = 300, device = cairo_pdf)
+  ggsave("Figure4_JaccardIndex.pdf", fig4, width = 85, height = 60, units = "mm", 
+         dpi = 300, device = cairo_pdf)
+  ggsave("Figure5_ComparisonHeatmap.pdf", fig5, width = 85, height = 60, units = "mm", 
+         dpi = 300, device = cairo_pdf)
+  
+  # Save as PNG alternatives
+  ggsave("Figure1_GeneConfidence.png", fig1, width = 85, height = 60, units = "mm", dpi = 300)
+  ggsave("Figure2_VennDiagrams.png", fig2_combined, width = 170, height = 60, units = "mm", dpi = 300)
+  ggsave("Figure3_OverlapAnalysis.png", fig3, width = 85, height = 60, units = "mm", dpi = 300)
+  ggsave("Figure4_JaccardIndex.png", fig4, width = 85, height = 60, units = "mm", dpi = 300)
+  ggsave("Figure5_ComparisonHeatmap.png", fig5, width = 85, height = 60, units = "mm", dpi = 300)
+  
+  cat("All plots saved successfully with Cairo!\n")
+} else {
+  # Fallback method: Use PNG format
+  ggsave("Figure1_GeneConfidence.png", fig1, width = 85, height = 60, units = "mm", dpi = 300)
+  ggsave("Figure2_VennDiagrams.png", fig2_combined, width = 170, height = 60, units = "mm", dpi = 300)
+  ggsave("Figure3_OverlapAnalysis.png", fig3, width = 85, height = 60, units = "mm", dpi = 300)
+  ggsave("Figure4_JaccardIndex.png", fig4, width = 85, height = 60, units = "mm", dpi = 300)
+  ggsave("Figure5_ComparisonHeatmap.png", fig5, width = 85, height = 60, units = "mm", dpi = 300)
+  
+  cat("Plots saved as PNG format (install Cairo package for PDF support)\n")
+  cat("To install Cairo: install.packages('Cairo')\n")
+}
+
+# Alternative PDF saving method
+tryCatch({
+  pdf("GeneOverlapAnalysis_AllFigures.pdf", width = 210/25.4, height = 297/25.4)
+  print(fig1)
+  print(fig2_combined)
+  print(fig3)
+  print(fig4)
+  print(fig5)
+  dev.off()
+  
+  cat("Combined PDF file also saved!\n")
+}, error = function(e) {
+  cat("Combined PDF saving failed:", e$message, "\n")
+})
+
+# Print final summary
+cat("\n==========================================\n")
+cat("GENE OVERLAP ANALYSIS FIGURES GENERATED\n")
+cat("==========================================\n")
+cat("Figure 1: Gene detection by confidence level\n")
+cat("Figure 2: Venn diagrams by confidence (3 panels)\n")
+cat("Figure 3: Quantitative overlap analysis\n")
+cat("Figure 4: Jaccard similarity index\n")
+cat("Figure 5: Protocol comparison heatmap\n")
+cat("==========================================\n")
+cat("Key findings:\n")
+cat(sprintf("- High confidence Jaccard index: %.3f\n", summary_data$Jaccard_Index[summary_data$Confidence == "High"]))
+cat(sprintf("- Medium confidence Jaccard index: %.3f\n", summary_data$Jaccard_Index[summary_data$Confidence == "Medium"]))
+cat(sprintf("- Low confidence Jaccard index: %.3f\n", summary_data$Jaccard_Index[summary_data$Confidence == "Low"]))
+cat(sprintf("- Overall genes detected: PCR-cDNA=%d, Direct RNA=%d\n", total_cdna, total_drna))
+cat("==========================================\n")
+
+```

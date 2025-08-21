@@ -1,0 +1,659 @@
+---
+title: "SKMM2 cDNA vs direct DTU"
+author: "Rebecca L"
+date: "2024-08-21"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(dplyr)
+library(matrixStats)
+library(gplots)
+library(reshape2)
+library(tidyr)
+library(ggalluvial)
+library(forcats)
+library(ggpubr)
+library(viridis)
+library(edgeR)
+knitr::opts_chunk$set(echo = TRUE)
+source("customfunc.R")
+```
+
+```{r import DTU results}
+
+#Import Count Matrices
+cdna_count=read.csv("DTU Results/cdna_txnorm.csv", header=TRUE)
+drna_count=read.csv("DTU Results/drna_txnorm.csv", header=TRUE)
+
+#Import significant genes/transcripts 
+cdna_stat=read.csv("DTU Results/cdna_dexDTU.csv", header=TRUE)
+drna_stat=read.csv("DTU Results/drna_dexDTU.csv", header=TRUE)
+
+#Read in sample info 
+sampleinfo=read.csv("sampleinfo.csv")
+
+```
+
+
+```{r subset matrices}
+#Subset count matrices to significant genes
+cdna_sig=cdna_count[,c(1:4,12)]
+drna_sig=drna_count[,c(1:4,12)]
+
+#Calculate percentage of each transcript per gene
+cdna_sig= cdna_sig %>% group_by(HGNC) %>% mutate(Control = Control * 100/sum(Control), IL6=IL6*100/sum(IL6))
+drna_sig= drna_sig %>% group_by(HGNC) %>% mutate(Control = Control* 100/sum(Control), IL6=IL6*100/sum(IL6))
+
+```
+
+```{r venns}
+dtu_comp=list('PCR-cDNA'=cdna_stat$txID[cdna_stat$transcript<0.05], dRNA=drna_stat$txID[drna_stat$transcript<0.05])
+dtu_gene=list('PCR-cDNA'=cdna_stat$geneID[cdna_stat$gene<0.05], dRNA=drna_stat$geneID[drna_stat$gene<0.05])
+
+#Overlap transcripts
+library(ggvenn)
+ggvenn(dtu_comp, 
+       show_percentage=FALSE, 
+       fill_color=c("turquoise3", "navy"), 
+       auto_scale=TRUE)
+
+overlap=venn(dtu_comp, 
+             show.plot=FALSE,
+             intersections=TRUE)
+intersections=attr(overlap, "intersections")
+
+
+#Overlap genes
+overlap_gene=venn(dtu_gene, 
+             show.plot=FALSE,
+             intersections=TRUE)
+intersections_gene=attr(overlap_gene, "intersections")
+
+
+```
+
+
+```{r plot, significant in dRNA only}
+#Combined df for dRNA and cDNA
+comb=bind_rows(cdna_sig, drna_sig, .id="library")
+comb$protocol=ifelse(comb$library==1, "PCR-cDNA", "directRNA")
+
+#Sig in dRNA only- plot all
+drna_comb=comb[comb$groupID %in% intersections_gene$dRNA,-1]
+drna_comb_m=pivot_longer(drna_comb, cols=3:4)
+
+for(i in unique(drna_comb_m$HGNC)){
+  plot1=plotDTUcomp(drna_comb_m, i)
+  print(plot1)
+}
+#Selected example- sig in dRNA only
+plotDTUcomp(drna_comb_m, "RNF220")
+```
+
+```{r plot significant in cDNA only}
+#Sig in cDNA only - plot all
+cdna_comb=comb[comb$groupID %in% intersections_gene$`PCR-cDNA`, -1]
+cdna_comb_m=pivot_longer(cdna_comb, cols=3:4)
+
+for(i in unique(cdna_comb_m$HGNC)){
+  plot1=plotDTUcomp(cdna_comb_m, i)
+  print(plot1)
+}
+
+#Selected example, sig in cDNA only
+plotDTUcomp(cdna_comb_m, "GRB2")
+```
+
+```{r plot significant in both}
+#sig in both - plot all
+sig_comb=comb[comb$groupID %in% intersections_gene$`PCR-cDNA:dRNA`, -1]
+sig_comb_m=pivot_longer(sig_comb, cols=3:4)
+
+for(i in unique(sig_comb_m$HGNC)){
+  plot1=plotDTUcomp(sig_comb_m, i)
+  print(plot1)
+}
+
+#Selected example - sig in both protocols
+plotDTUcomp(sig_comb_m,"RPL22L1")
+```
+
+```{r rpl22l1 tx structure}
+library(ggtranscript)
+library(RColorBrewer)
+
+#read in df with tx info
+tx_info=read.csv("genes_interest_dtu.csv", header=TRUE)
+
+
+#RPL22L1
+rpl_info=tx_info[tx_info$gene_name=="RPL22L1",]
+rpl_info=rpl_info[rpl_info$transcript_name %in% comb$featureID,]
+
+
+rpl_exons <- rpl_info %>% dplyr::filter( type== "exon")
+
+rpl_plot=rpl_exons%>%
+    ggplot(aes(
+        xstart = start,
+        xend = end,
+        y = transcript_name
+    )) +
+    geom_range(aes(fill = transcript_name))+
+    scale_fill_viridis(discrete=TRUE)+
+    geom_intron(
+        data = to_intron(rpl_exons, "transcript_name"),
+        aes(strand = strand))+
+          theme_bw()+
+          theme(
+      legend.text = element_text(size=14),
+      axis.text = element_text(size=18), 
+      axis.title.x=element_text(size=18),
+      axis.title.y=element_text(size=18),
+      legend.position="bottom")+
+  ylab("Transcript Name")
+rpl_plot
+```
+
+```{r grb2 tx structure}
+#GRB2
+grb2_info=tx_info[tx_info$gene_name=="GRB2",]
+grb2_info=grb2_info[grb2_info$transcript_name %in% comb$featureID,]
+
+grb2_exons=grb2_info %>% dplyr::filter( type== "exon")
+
+
+grb2_plot=grb2_exons%>%
+    ggplot(aes(
+        xstart = start,
+        xend = end,
+        y = transcript_name
+    )) +
+    geom_range(aes(fill = transcript_name))+
+    scale_fill_viridis(discrete=TRUE)+
+    geom_intron(
+        data = to_intron(grb2_exons, "transcript_name"),
+        aes(strand = strand))+
+          theme_bw()+
+          theme(
+      legend.text=element_text(size=14),
+      axis.text=element_text(size=18), 
+      axis.title.x=element_text(size=18),
+      axis.title.y=element_text(size=18),
+      legend.position="bottom")+
+  ylab("Transcript Name")
+grb2_plot            
+```
+
+```{r rnf220 tx structure}
+#RNF220
+rnf_info=tx_info[tx_info$gene_name=="RNF220",]
+rnf_info=rnf_info[rnf_info$transcript_name %in% comb$featureID,]
+
+
+rnf_exons <- rnf_info %>% dplyr::filter( type== "exon")
+
+
+rnf_plot=rnf_exons%>%
+    ggplot(aes(
+        xstart = start,
+        xend = end,
+        y = transcript_name
+    )) +
+    geom_range(aes(fill = transcript_name, colour=transcript_name))+
+    scale_fill_viridis(discrete=TRUE)+
+    geom_intron(
+        data = to_intron(rnf_exons, "transcript_name"),
+        aes(strand = strand, colour=transcript_name))+
+  scale_colour_viridis(discrete=TRUE)+
+          theme_bw()+
+          theme(
+      legend.text = element_text(size =14),
+      axis.text = element_text(size = 18), 
+      axis.title.x=element_text(size=18),
+      axis.title.y=element_text(size=18),
+      legend.position="bottom")+
+  ylab("Transcript Name")
+rnf_plot
+```
+
+```{r plot genes of interest}
+#Import VSD normalised gene expression values and select genes of interest
+genelist=c("RPL22L1", "GRB2", "RNF220")
+gene_exp=read.csv("gene_vsdnorm.csv", row.names = 1)
+vsd_sel=as.data.frame(gene_exp[gene_exp$hgnc_symbol %in% genelist,])
+rownames(vsd_sel)=vsd_sel$hgnc_symbol
+vsd_t=data.frame(t(vsd_sel[,2:13]))
+vsd_t$Condition=sampleinfo$Condition
+vsd_t$Experiment=sampleinfo$Experiment
+
+vsd_m=pivot_longer(vsd_t, cols=1:3)
+
+#RPL22L1
+ggplot(vsd_m[vsd_m$name=="RPL22L1",], aes(x=Condition, y=value, fill=Experiment))+ stat_summary(fun="mean", geom="bar") + stat_summary(geom="errorbar", colour="black", position=position_dodge(0.95))+ facet_wrap(~Experiment) +theme_bw()+ scale_fill_manual(values=c("turquoise3", "navy"))+xlab("Condition")+ylab("log2 Normalised  Expression") + theme(
+      legend.text = element_text(size =14),
+      axis.text = element_text(size = 18), 
+      axis.title.x=element_text(size=18),
+      axis.title.y=element_text(size=18))
+
+#GRB2
+ggplot(vsd_m[vsd_m$name=="GRB2",], aes(x=Condition, y=value, fill=Experiment))+ stat_summary(fun="mean", geom="bar") + stat_summary(geom="errorbar", colour="black", position=position_dodge(0.95))+ facet_wrap(~Experiment) +theme_bw()+ scale_fill_manual(values=c("turquoise3", "navy"))+xlab("Condition")+ylab("log2 Normalised  Expression") + theme(
+      legend.text = element_text(size =14),
+      axis.text = element_text(size = 18), 
+      axis.title.x=element_text(size=18),
+      axis.title.y=element_text(size=18))
+
+#RNF220
+ggplot(vsd_m[vsd_m$name=="RNF220",], aes(x=Condition, y=value, fill=Experiment))+ stat_summary(fun="mean", geom="bar") + stat_summary(geom="errorbar", colour="black", position=position_dodge(0.95))+ facet_wrap(~Experiment) +theme_bw()+ scale_fill_manual(values=c("turquoise3", "navy"))+xlab("Condition")+ylab("log2 Normalised  Expression") + theme(
+      legend.text = element_text(size =14),
+      axis.text = element_text(size = 18), 
+      axis.title.x=element_text(size=18),
+      axis.title.y=element_text(size=18))
+
+
+
+```
+
+```{r tx exp raw}
+
+cdna_rawcount=read.csv("cdna2_SKMM2_counts_transcript.txt", header=TRUE, sep="\t")
+drna_rawcount=read.csv("drnasub_SKMM2_counts_transcript.txt", header=TRUE, sep="\t")
+
+#Convert raw counts to cpm
+cdna_cpm=cpm(cdna_rawcount[,3:8], normalized.lib.sizes=TRUE)
+drna_cpm=cpm(drna_rawcount[,3:8], normalized.lib.sizes=TRUE)
+
+#Append gene and tx names back
+cdna_cpm=data.frame(cdna_rawcount[,1:2], cdna_cpm)
+drna_cpm=data.frame(drna_rawcount[,1:2], drna_cpm)
+
+#List ensembl IDs for genes of interest
+ensemblgenes=unique(comb$groupID[comb$HGNC %in% genelist])
+
+#Subset dfs to tx of interest
+cdna_cpm=cdna_cpm[cdna_cpm$TXNAME %in% comb$featureID & cdna_cpm$GENEID %in% ensemblgenes,]
+drna_cpm=drna_cpm[drna_cpm$GENEID %in% ensemblgenes & drna_cpm$TXNAME %in% comb$featureID,]
+
+#Average for Ctrl and IL6
+cdna_cpmb=cdna_cpm %>% mutate(Control= rowMeans(dplyr::select(.,contains("ctrl"), n=3)), IL6= rowMeans(dplyr::select(.,contains("IL6"),n=3)))
+
+drna_cpmb=drna_cpm %>% mutate(Control = rowMeans(dplyr::select(.,contains("ctrl"))), IL6= rowMeans(dplyr::select(.,contains("IL6"))))
+
+#Subset
+cdna_cpmb=cdna_cpmb[, c(1:2, 9:10)]
+drna_cpmb=drna_cpmb[, c(1:2, 9:10 )]
+
+#Convert to log2
+cdna_cpmb[, 3:4]=log2(cdna_cpmb[,3:4]+1)
+drna_cpmb[,3:4]=log2(drna_cpmb[,3:4]+1)
+
+#Prep df to plot
+comb_cpm=bind_rows(cdna_cpmb, drna_cpmb, .id="protocol")
+comb_cpm$protocol=if_else(comb_cpm$protocol==1, "PCR-cDNA", "direct RNA")
+comb_cpm=left_join(comb_cpm, tx_info[, 6:7], by=join_by("TXNAME"=="transcript_name"), multiple="any")
+comb_cpm_m=pivot_longer(comb_cpm, cols=4:5)
+
+#RPL22L1
+ggplot(comb_cpm_m[comb_cpm_m$gene_name=="RPL22L1",], aes(x=name, y=value, fill=TXNAME, group=name)) + geom_col() + scale_fill_viridis(discrete=TRUE) + facet_wrap(~protocol)+
+  xlab("Condition") + ylab(" log2 Normalised Count per Million (CPM)")+
+  theme(
+      legend.text = element_text(size =14),
+      axis.text = element_text(size = 18), 
+      axis.title.x=element_text(size=18),
+      axis.title.y=element_text(size=18),
+      legend.position="bottom")
+#GRB2
+ggplot(comb_cpm_m[comb_cpm_m$gene_name=="GRB2",], aes(x=name, y=value, fill=TXNAME, group=name)) + geom_col() + scale_fill_viridis(discrete=TRUE) + facet_wrap(~protocol)+
+  xlab("Condition") + ylab("log2 Normalised Count per Million (CPM)") +theme(
+      legend.text = element_text(size =14),
+      axis.text = element_text(size = 18), 
+      axis.title.x=element_text(size=18),
+      axis.title.y=element_text(size=18),
+      legend.position="bottom")
+#RNF220
+ggplot(comb_cpm_m[comb_cpm_m$gene_name=="RNF220",], aes(x=name, y=value, fill=TXNAME, group=name)) + geom_col() + scale_fill_viridis(discrete=TRUE) + facet_wrap(~protocol)+
+  xlab("Condition") + ylab("Transcript Count per Million (CPM)")+theme(
+      legend.text = element_text(size =14),
+      axis.text = element_text(size = 18), 
+      axis.title.x=element_text(size=18),
+      axis.title.y=element_text(size=18),
+      legend.position="bottom")
+```
+
+
+
+---
+title: "SKMM2 cDNA vs direct DTU"
+author: "Rebecca L"
+date: "2024-08-21"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(dplyr)
+library(matrixStats)
+library(gplots)
+library(reshape2)
+library(tidyr)
+library(ggalluvial)
+library(forcats)
+library(ggpubr)
+library(viridis)
+library(edgeR)
+library(ggvenn)
+library(ggtranscript)
+library(RColorBrewer)
+knitr::opts_chunk$set(echo = TRUE)
+source("customfunc.R")
+```
+
+```{r import DTU results}
+#Import Count Matrices
+cdna_count=read.csv("DTU Results/cdna_txnorm.csv", header=TRUE)
+drna_count=read.csv("DTU Results/drna_txnorm.csv", header=TRUE)
+
+#Import significant genes/transcripts 
+cdna_stat=read.csv("DTU Results/cdna_dexDTU.csv", header=TRUE)
+drna_stat=read.csv("DTU Results/drna_dexDTU.csv", header=TRUE)
+
+#Read in sample info 
+sampleinfo=read.csv("sampleinfo.csv")
+```
+
+```{r subset matrices}
+#Subset count matrices to significant genes
+cdna_sig=cdna_count[,c(1:4,12)]
+drna_sig=drna_count[,c(1:4,12)]
+
+#Calculate percentage of each transcript per gene
+cdna_sig= cdna_sig %>% 
+  group_by(HGNC) %>% 
+  mutate(Control = Control * 100/sum(Control), IL6=IL6*100/sum(IL6))
+
+drna_sig= drna_sig %>% 
+  group_by(HGNC) %>% 
+  mutate(Control = Control* 100/sum(Control), IL6=IL6*100/sum(IL6))
+```
+
+```{r venns}
+dtu_comp=list('PCR-cDNA'=cdna_stat$txID[cdna_stat$transcript<0.05], 
+              dRNA=drna_stat$txID[drna_stat$transcript<0.05])
+dtu_gene=list('PCR-cDNA'=cdna_stat$geneID[cdna_stat$gene<0.05], 
+              dRNA=drna_stat$geneID[drna_stat$gene<0.05])
+
+#Overlap transcripts - Publication Quality
+transcript_venn <- ggvenn(dtu_comp,
+       show_percentage=FALSE,
+       fill_color=c("turquoise3", "navy"),
+       auto_scale=TRUE,
+       text_size=3) +
+  theme(plot.background = element_rect(fill = "white", color = NA))
+
+ggsave("dtu_transcripts_venn.pdf", transcript_venn, 
+       width = 4, height = 3.5, units = "in", dpi = 300)
+
+#Overlap genes - Publication Quality  
+gene_venn <- ggvenn(dtu_gene,
+       show_percentage=FALSE,
+       fill_color=c("turquoise3", "navy"),
+       auto_scale=TRUE,
+       text_size=3) +
+  theme(plot.background = element_rect(fill = "white", color = NA))
+
+ggsave("dtu_genes_venn.pdf", gene_venn, 
+       width = 4, height = 3.5, units = "in", dpi = 300)
+
+overlap=venn(dtu_comp,
+              show.plot=FALSE,
+             intersections=TRUE)
+intersections=attr(overlap, "intersections")
+
+#Overlap genes
+overlap_gene=venn(dtu_gene,
+              show.plot=FALSE,
+             intersections=TRUE)
+intersections_gene=attr(overlap_gene, "intersections")
+```
+
+```{r transcript structure plots}
+#read in df with tx info
+tx_info=read.csv("genes_interest_dtu.csv", header=TRUE)
+
+# Publication-ready transcript structure plots
+create_transcript_plot <- function(gene_name, comb_data, tx_info) {
+  gene_info = tx_info[tx_info$gene_name == gene_name,]
+  gene_info = gene_info[gene_info$transcript_name %in% comb_data$featureID,]
+  gene_exons = gene_info %>% dplyr::filter(type == "exon")
+  
+  plot = gene_exons %>%
+    ggplot(aes(xstart = start, xend = end, y = transcript_name)) +
+    geom_range(aes(fill = transcript_name)) +
+    scale_fill_viridis_d(name = "Transcript") +
+    geom_intron(data = to_intron(gene_exons, "transcript_name"),
+                aes(strand = strand)) +
+    labs(x = "Genomic Position", y = "Transcript", title = gene_name) +
+    theme_classic() +
+    theme(
+      axis.text = element_text(size = 8, color = "black"),
+      axis.title = element_text(size = 9, color = "black"),
+      plot.title = element_text(size = 10, color = "black", hjust = 0.5),
+      legend.text = element_text(size = 8, color = "black"),
+      legend.title = element_text(size = 8, color = "black"),
+      legend.position = "bottom",
+      axis.line = element_line(color = "black", linewidth = 0.5),
+      axis.ticks = element_line(color = "black", linewidth = 0.5),
+      panel.background = element_rect(fill = "white", color = NA),
+      plot.background = element_rect(fill = "white", color = NA)
+    )
+  return(plot)
+}
+
+#Combined df for dRNA and cDNA
+comb=bind_rows(cdna_sig, drna_sig, .id="library")
+comb$protocol=ifelse(comb$library==1, "PCR-cDNA", "directRNA")
+
+# Create and save transcript structure plots
+rpl_plot <- create_transcript_plot("RPL22L1", comb, tx_info)
+ggsave("RPL22L1_transcript_structure.pdf", rpl_plot, 
+       width = 6, height = 4, units = "in", dpi = 300)
+
+grb2_plot <- create_transcript_plot("GRB2", comb, tx_info)
+ggsave("GRB2_transcript_structure.pdf", grb2_plot, 
+       width = 6, height = 4, units = "in", dpi = 300)
+
+rnf220_plot <- create_transcript_plot("RNF220", comb, tx_info)
+ggsave("RNF220_transcript_structure.pdf", rnf220_plot, 
+       width = 6, height = 4, units = "in", dpi = 300)
+```
+
+```{r gene expression plots}
+#Import VSD normalised gene expression values and select genes of interest
+genelist=c("RPL22L1", "GRB2", "RNF220")
+gene_exp=read.csv("gene_vsdnorm.csv", row.names = 1)
+vsd_sel=as.data.frame(gene_exp[gene_exp$hgnc_symbol %in% genelist,])
+rownames(vsd_sel)=vsd_sel$hgnc_symbol
+vsd_t=data.frame(t(vsd_sel[,2:13]))
+vsd_t$Condition=sampleinfo$Condition
+vsd_t$Experiment=sampleinfo$Experiment
+vsd_m=pivot_longer(vsd_t, cols=1:3)
+
+# Function to create publication-ready expression plots
+create_expression_plot <- function(gene_name, data) {
+  plot <- ggplot(data[data$name == gene_name,], 
+                 aes(x = Condition, y = value, fill = Experiment)) +
+    stat_summary(fun = "mean", geom = "bar", position = "dodge") + 
+    stat_summary(fun.data = mean_se, geom = "errorbar", 
+                 position = position_dodge(0.9), width = 0.2, color = "black") +
+    facet_wrap(~Experiment) +
+    scale_fill_manual(values = c("turquoise3", "navy")) +
+    labs(x = "Condition", 
+         y = expression("log"[2]*" Normalised Expression"),
+         title = gene_name) +
+    theme_classic() +
+    theme(
+      axis.text = element_text(size = 8, color = "black"),
+      axis.title = element_text(size = 9, color = "black"),
+      plot.title = element_text(size = 10, color = "black", hjust = 0.5),
+      legend.position = "none",
+      strip.text = element_text(size = 8, color = "black"),
+      strip.background = element_rect(fill = "white", color = "black"),
+      axis.line = element_line(color = "black", linewidth = 0.5),
+      axis.ticks = element_line(color = "black", linewidth = 0.5),
+      panel.background = element_rect(fill = "white", color = NA),
+      plot.background = element_rect(fill = "white", color = NA)
+    )
+  return(plot)
+}
+
+# Create and save gene expression plots
+rpl22l1_expr <- create_expression_plot("RPL22L1", vsd_m)
+ggsave("RPL22L1_gene_expression.pdf", rpl22l1_expr, 
+       width = 4.5, height = 3.5, units = "in", dpi = 300)
+
+grb2_expr <- create_expression_plot("GRB2", vsd_m)
+ggsave("GRB2_gene_expression.pdf", grb2_expr, 
+       width = 4.5, height = 3.5, units = "in", dpi = 300)
+
+rnf220_expr <- create_expression_plot("RNF220", vsd_m)
+ggsave("RNF220_gene_expression.pdf", rnf220_expr, 
+       width = 4.5, height = 3.5, units = "in", dpi = 300)
+```
+
+```{r transcript expression plots}
+cdna_rawcount=read.csv("cdna2_SKMM2_counts_transcript.txt", header=TRUE, sep="\t")
+drna_rawcount=read.csv("drnasub_SKMM2_counts_transcript.txt", header=TRUE, sep="\t")
+
+#Convert raw counts to cpm
+cdna_cpm=cpm(cdna_rawcount[,3:8], normalized.lib.sizes=TRUE)
+drna_cpm=cpm(drna_rawcount[,3:8], normalized.lib.sizes=TRUE)
+
+#Append gene and tx names back
+cdna_cpm=data.frame(cdna_rawcount[,1:2], cdna_cpm)
+drna_cpm=data.frame(drna_rawcount[,1:2], drna_cpm)
+
+#List ensembl IDs for genes of interest
+ensemblgenes=unique(comb$groupID[comb$HGNC %in% genelist])
+
+#Subset dfs to tx of interest
+cdna_cpm=cdna_cpm[cdna_cpm$TXNAME %in% comb$featureID & cdna_cpm$GENEID %in% ensemblgenes,]
+drna_cpm=drna_cpm[drna_cpm$GENEID %in% ensemblgenes & drna_cpm$TXNAME %in% comb$featureID,]
+
+#Average for Ctrl and IL6
+cdna_cpmb=cdna_cpm %>% 
+  mutate(Control= rowMeans(dplyr::select(.,contains("ctrl"), n=3)), 
+         IL6= rowMeans(dplyr::select(.,contains("IL6"),n=3)))
+
+drna_cpmb=drna_cpm %>% 
+  mutate(Control = rowMeans(dplyr::select(.,contains("ctrl"))), 
+         IL6= rowMeans(dplyr::select(.,contains("IL6"))))
+
+#Subset
+cdna_cpmb=cdna_cpmb[, c(1:2, 9:10)]
+drna_cpmb=drna_cpmb[, c(1:2, 9:10 )]
+
+#Convert to log2
+cdna_cpmb[, 3:4]=log2(cdna_cpmb[,3:4]+1)
+drna_cpmb[,3:4]=log2(drna_cpmb[,3:4]+1)
+
+#Prep df to plot
+comb_cpm=bind_rows(cdna_cpmb, drna_cpmb, .id="protocol")
+comb_cpm$protocol=if_else(comb_cpm$protocol==1, "PCR-cDNA", "direct RNA")
+comb_cpm=left_join(comb_cpm, tx_info[, 6:7], by=join_by("TXNAME"=="transcript_name"), multiple="any")
+comb_cpm_m=pivot_longer(comb_cpm, cols=4:5)
+
+# Function to create publication-ready transcript expression plots
+create_transcript_expr_plot <- function(gene_name, data) {
+  plot <- ggplot(data[data$gene_name == gene_name,], 
+                 aes(x = name, y = value, fill = TXNAME)) + 
+    geom_col(position = "stack") + 
+    scale_fill_viridis_d(name = "Transcript") + 
+    facet_wrap(~protocol) +
+    labs(x = "Condition", 
+         y = expression("log"[2]*" CPM"),
+         title = paste(gene_name, "Transcript Expression")) +
+    theme_classic() +
+    theme(
+      axis.text = element_text(size = 8, color = "black"),
+      axis.title = element_text(size = 9, color = "black"),
+      plot.title = element_text(size = 10, color = "black", hjust = 0.5),
+      legend.text = element_text(size = 7, color = "black"),
+      legend.title = element_text(size = 8, color = "black"),
+      legend.position = "bottom",
+      strip.text = element_text(size = 8, color = "black"),
+      strip.background = element_rect(fill = "white", color = "black"),
+      axis.line = element_line(color = "black", linewidth = 0.5),
+      axis.ticks = element_line(color = "black", linewidth = 0.5),
+      panel.background = element_rect(fill = "white", color = NA),
+      plot.background = element_rect(fill = "white", color = NA)
+    ) +
+    guides(fill = guide_legend(ncol = 2))
+  return(plot)
+}
+
+# Create and save transcript expression plots
+rpl22l1_tx_expr <- create_transcript_expr_plot("RPL22L1", comb_cpm_m)
+ggsave("RPL22L1_transcript_expression.pdf", rpl22l1_tx_expr, 
+       width = 6, height = 4.5, units = "in", dpi = 300)
+
+grb2_tx_expr <- create_transcript_expr_plot("GRB2", comb_cpm_m)
+ggsave("GRB2_transcript_expression.pdf", grb2_tx_expr, 
+       width = 6, height = 4.5, units = "in", dpi = 300)
+
+rnf220_tx_expr <- create_transcript_expr_plot("RNF220", comb_cpm_m)
+ggsave("RNF220_transcript_expression.pdf", rnf220_tx_expr, 
+       width = 6, height = 4.5, units = "in", dpi = 300)
+```
+
+```{r DTU comparison plots}
+# Function to save DTU comparison plots for significant genes
+save_dtu_plots <- function(gene_data, gene_list, suffix) {
+  gene_data_m <- pivot_longer(gene_data, cols=3:4)
+  
+  for(gene in unique(gene_data_m$HGNC)) {
+    plot1 <- plotDTUcomp(gene_data_m, gene)  # Using your custom function
+    
+    # Apply publication formatting if needed
+    if(class(plot1)[1] == "ggplot") {
+      plot1 <- plot1 + 
+        theme_classic() +
+        theme(
+          axis.text = element_text(size = 8, color = "black"),
+          axis.title = element_text(size = 9, color = "black"),
+          plot.title = element_text(size = 10, color = "black"),
+          legend.text = element_text(size = 8, color = "black"),
+          legend.title = element_text(size = 8, color = "black"),
+          strip.text = element_text(size = 8, color = "black"),
+          panel.background = element_rect(fill = "white", color = NA),
+          plot.background = element_rect(fill = "white", color = NA)
+        )
+    }
+    
+    filename <- paste0(gene, "_DTU_", suffix, ".pdf")
+    ggsave(filename, plot1, width = 6, height = 4, units = "in", dpi = 300)
+  }
+}
+
+# Save DTU plots for different categories
+# Sig in dRNA only
+drna_comb=comb[comb$groupID %in% intersections_gene$dRNA,-1]
+save_dtu_plots(drna_comb, intersections_gene$dRNA, "dRNA_only")
+
+# Sig in cDNA only  
+cdna_comb=comb[comb$groupID %in% intersections_gene$`PCR-cDNA`, -1]
+save_dtu_plots(cdna_comb, intersections_gene$`PCR-cDNA`, "cDNA_only")
+
+# Sig in both
+sig_comb=comb[comb$groupID %in% intersections_gene$`PCR-cDNA:dRNA`, -1]
+save_dtu_plots(sig_comb, intersections_gene$`PCR-cDNA:dRNA`, "both_protocols")
+
+# Summary message
+cat("All plots saved as individual PDFs:\n")
+cat("- Venn diagrams: dtu_transcripts_venn.pdf, dtu_genes_venn.pdf\n")
+cat("- Transcript structures: [GENE]_transcript_structure.pdf\n")
+cat("- Gene expression: [GENE]_gene_expression.pdf\n") 
+cat("- Transcript expression: [GENE]_transcript_expression.pdf\n")
+cat("- DTU comparisons: [GENE]_DTU_[category].pdf\n")
+```

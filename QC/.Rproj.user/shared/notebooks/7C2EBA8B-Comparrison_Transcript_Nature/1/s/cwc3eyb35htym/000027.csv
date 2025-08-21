@@ -1,0 +1,28 @@
+"0","cat(""\n==========================================\n"")"
+"1","
+==========================================
+"
+"0","cat(""TRANSCRIPT ANALYSIS FIGURES GENERATED\n"")"
+"1","TRANSCRIPT ANALYSIS FIGURES GENERATED
+"
+"0","cat(""==========================================\n"")"
+"1","==========================================
+"
+"0","cat(""Figure 1: Overall transcript confidence\n"")"
+"1","Figure 1: Overall transcript confidence
+"
+"0","cat(""Figure 2A: Confidence by transcript length\n"") "
+"1","Figure 2A: Confidence by transcript length
+"
+"0","cat(""Figure 2B: Length distribution by confidence\n"")"
+"1","Figure 2B: Length distribution by confidence
+"
+"0","cat(""Figure 3: Venn diagrams (4 panels)\n"")"
+"1","Figure 3: Venn diagrams (4 panels)
+"
+"0","cat(""Figure 4: Length distribution density plots\n"")"
+"1","Figure 4: Length distribution density plots
+"
+"0","cat(""==========================================\n"")"
+"1","==========================================
+"

@@ -1,0 +1,73 @@
+---
+title: "SKMM2 DTU cDNA Plots"
+author: "Rebecca L"
+date: "2024-08-21"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(ggplot2)
+library(dplyr)
+library(gplots)
+library(reshape2)
+library(tidyr)
+library(ggalluvial)
+library(clusterProfiler)
+library(DOSE)
+library(org.Hs.eg.db)
+library(RColorBrewer)
+library(ggvenn)
+knitr::opts_chunk$set(echo = TRUE)
+source("customfunc.R")
+```
+
+
+```{r import DTU results}
+
+
+#Import Count Matrices
+il6_count=read.csv("DTU Results/cdna_txnorm.csv", header=TRUE)
+
+#Import significant genes/transcripts
+il6_stat=read.csv("DTU Results/cdna_dexDTU.csv", header=TRUE)
+
+#Read in sample info 
+sampleinfo=read.csv("sampleinfo.csv")[1:6,]
+```
+
+```{r subsetting for plotting}
+#Subset count matrices to significant genes
+il6_sig=il6_count[il6_count$groupID %in% il6_stat$geneID,c(2:4,11:12)]
+
+#Calculate percentage of each transcript per gene
+il6_perc=il6_sig  %>% group_by(HGNC) %>% 
+  mutate(Control = (Control* 100/sum(Control)), IL6=(IL6*100/sum(IL6)))
+
+```
+
+
+```{r plots Ctrl vs IL6}
+
+#Plot each gene with significant DTU
+il6_m=pivot_longer(il6_sig, cols=c(2:3))
+
+for(i in unique(il6_m$HGNC)){
+  plot1=plotDTU(il6_m, i)
+  print(plot1)
+  }
+
+#Plot the lfcs against gene-level data
+
+il6_gene=read.csv("DGE Results/DGE_cdna.csv", header=TRUE, row.names=1)[,c(2:7)]
+il6_gene=il6_gene[il6_gene$hgnc %in% il6_sig$HGNC,]
+il6_gene$transcript="gene"
+il6_trans=data.frame("log2FoldChange"=il6_stat$log2fc, "hgnc"=il6_stat$HGNC, "transcript"=il6_stat$txID)
+il6_lfc=bind_rows(il6_gene, il6_trans, .id="level")
+
+for(i in unique(il6_lfc$hgnc)){
+  plot1=plotLFC(il6_lfc, i)
+  print(plot1)
+  }
+
+```
+

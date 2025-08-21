@@ -1,0 +1,4 @@
+"0","pheatmap(sampleDistMatrix,"
+"0","         clustering_distance_rows=sampleDists,"
+"0","         clustering_distance_cols=sampleDists,"
+"0","         col=colors)"

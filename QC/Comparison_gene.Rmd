@@ -1,0 +1,121 @@
+---
+title: "SKMM2 cDNA vs dRNA Gene"
+author: "Rebecca L"
+date: "2024-10-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggvenn)
+library(dplyr)
+library(edgeR)
+library(tidyr)
+library(forcats)
+library(ggpubr)
+```
+
+```{r data import}
+
+#Import matrices
+cdna_counts=read.table("cdna2_SKMM2_counts_gene.txt", sep="\t", header=TRUE)
+
+drna_counts=read.table("drnasub_SKMM2_counts_gene.txt", sep="\t", header=TRUE)
+
+#Only keep genes with at least 1 count in at least 1 sample
+cdna_filt=cdna_counts[rowSums(cdna_counts[2:7])>0,]
+drna_filt=drna_counts[rowSums(drna_counts[2:7])>0,]
+
+#Convert raw counts to CPM
+cdna_cpm=as.data.frame(cpm(cdna_filt[2:7], log=FALSE))
+cdna_cpm$GENEID=cdna_filt$GENEID
+
+drna_cpm=as.data.frame(cpm(drna_filt[2:7], log=FALSE))
+drna_cpm$GENEID=drna_filt$GENEID
+
+```
+
+```{r defining low, med, high confidence detection}
+
+#Get summary statistics to define low, med and high confidence detection
+
+summary(cdna_cpm)
+summary(drna_cpm)
+
+#So defining low, med, high confidence: 
+##Low = detected in <3 samples 
+##Medium= detected 3-6 samples, average <1 CPM
+##High= detected in 3-6 samples, average >1CPM 
+
+
+cdna_cpm=mutate(cdna_cpm, mean=rowMeans(cdna_cpm[1:6]), detect=rowSums(cdna_cpm[1:6]>0))
+
+cdna_cpm= mutate(cdna_cpm, conf=case_when(detect<3 ~ "Low",  detect==6 ~"High", .default="Medium"))
+
+
+drna_cpm=mutate(drna_cpm, mean=rowMeans(drna_cpm[1:6]), detect=rowSums(drna_cpm[1:6]>0))
+
+drna_cpm= mutate(drna_cpm, conf=case_when(detect<3 ~ "Low", detect==6 ~"High", .default="Medium"))
+
+
+#Plot number of low, med, high confidence genes
+
+stacked=data.frame(cdna=table(cdna_cpm$conf), drna=table(drna_cpm$conf))[,-3]
+stacked_m=pivot_longer(stacked, cols=2:3)
+colnames(stacked_m)=c("conf", "Protocol", "Number of Genes")
+stacked_m=stacked_m %>% mutate (Protocol=as.factor(case_when(Protocol =="cdna.Freq" ~ "PCR-cDNA", .default="direct RNA")))
+
+
+labels=c("High", "Medium", "Low")
+
+stacked_m %>% mutate (Confidence=fct_relevel(conf, "High", "Medium", "Low")) %>% ggplot (aes(x=Protocol, y=`Number of Genes`, fill=Confidence))+geom_bar(position="stack", stat="identity")+ scale_fill_manual(values=c("darkred", "red", "pink"), labels=labels)+ theme(
+    legend.text = element_text(size = 14),
+    axis.text = element_text(size = 18), 
+    axis.title.x=element_text(size=18),
+    axis.title.y=element_text(size=18)
+  )
+
+
+```
+
+```{r overlaps}
+
+#All
+all=list(cDNA=cdna_cpm$GENEID, dRNA=drna_cpm$GENEID)
+
+ggvenn(all, 
+       fill_color=c("turquoise3", "navy"),
+       text_size=6,
+       show_percentage=FALSE, 
+       auto_scale=TRUE) 
+
+#High Confidence
+high=list(cDNA=cdna_cpm$GENEID[cdna_cpm$conf=="High"], dRNA=drna_cpm$GENEID[drna_cpm$conf=="High"])
+
+ggvenn(high, 
+       fill_color=c("turquoise3", "navy"),
+       text_size=6,
+       show_percentage=FALSE, 
+       auto_scale=TRUE) +ggtitle("High Confidence Genes")
+
+
+#Medium Confidence
+medium=list(cDNA=cdna_cpm$GENEID[cdna_cpm$conf=="Medium"], dRNA=drna_cpm$GENEID[drna_cpm$conf=="Medium"])
+
+ggvenn(medium, 
+       fill_color=c("turquoise3", "navy"),
+       text_size=6,
+       show_percentage=FALSE, 
+       auto_scale=TRUE) +ggtitle("Medium Confidence Genes")
+
+
+#Low Confidence
+low=list(cDNA=cdna_cpm$GENEID[cdna_cpm$conf=="Low"], dRNA=drna_cpm$GENEID[drna_cpm$conf=="Low"])
+
+ggvenn(low, 
+       fill_color=c("turquoise3", "navy"),
+       text_size=6,
+       show_percentage=FALSE, 
+       auto_scale=TRUE) +ggtitle("Low Confidence Genes")
+```
+

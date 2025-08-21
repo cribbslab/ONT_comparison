@@ -1,0 +1,667 @@
+```{r}
+# Nature Journal Style Publication Plots
+# Load required libraries
+library(DESeq2)
+library(DEXSeq)
+library(pheatmap)
+library(ggplot2)
+library(dplyr)
+library(reshape2)
+library(vsn)
+library(ggpubr)
+library(tidyr)
+library(data.table)
+library(venn)
+library(gplots)
+library(summarytools)
+library(ggvenn)
+library(rstatix)
+
+# Define Nature journal color palette and theme
+nature_colors <- c("#E64B35", "#4DBBD5", "#00A087", "#3C5488", "#F39B7F", "#8491B4")
+protocol_colors <- c("cDNA" = "#4DBBD5", "dRNA" = "#E64B35")
+
+# Check available fonts and use appropriate one
+available_fonts <- c("Helvetica", "Arial", "sans")
+font_to_use <- available_fonts[available_fonts %in% names(pdfFonts())][1]
+if(is.na(font_to_use)) font_to_use <- "sans"
+
+# Custom Nature-style theme
+nature_theme <- function() {
+  theme_classic() +
+  theme(
+    # Text elements
+    text = element_text(family = font_to_use, color = "black"),
+    axis.title = element_text(size = 8, color = "black"),
+    axis.text = element_text(size = 7, color = "black"),
+    legend.title = element_text(size = 8, color = "black"),
+    legend.text = element_text(size = 7, color = "black"),
+    plot.title = element_text(size = 9, color = "black", hjust = 0),
+    
+    # Lines and borders
+    axis.line = element_line(color = "black", size = 0.5),
+    axis.ticks = element_line(color = "black", size = 0.5),
+    
+    # Background
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA),
+    
+    # Legend
+    legend.background = element_rect(fill = "white", color = NA),
+    legend.key = element_rect(fill = "white", color = NA),
+    legend.position = "right",
+    
+    # Margins
+    plot.margin = margin(t = 5, r = 5, b = 5, l = 5, unit = "pt")
+  )
+}
+
+# Import data
+allreads <- read.table("allreadlengths.csv", header = TRUE, sep = ",")
+coldata <- read.csv("sampleinfo.csv", header = TRUE, row.names = 1)
+
+# ==========================================
+# FIGURE 1: Read Length Distribution
+# ==========================================
+
+# Process read length data
+lallreads <- as.list(allreads)
+breakpoints <- c(seq(0, 10000, by = 100), 1000000)
+freq <- lapply(lallreads, hist, breaks = breakpoints, plot = FALSE, use.names = TRUE)
+freqlist <- lapply(freq, "[", 2)
+
+# Convert to percentages
+new_list <- lapply(freqlist, transform, percentage = 100 * counts/sum(counts))
+perclist <- lapply(new_list, "[", 2)
+
+# Combine to dataframe
+combined_freq <- bind_cols(perclist)
+colnames(combined_freq) <- names(perclist)
+
+# Add sample information
+comb <- as.data.frame(t(combined_freq))
+colnames(comb) <- breakpoints[1:101]
+comb$sample <- rownames(comb)
+comb$Condition <- coldata$Condition
+comb$Protocol <- coldata$Protocol
+
+# Convert to long format
+combined_long <- pivot_longer(comb, cols = where(is.numeric))
+combined_long$name <- as.numeric(combined_long$name)
+
+# Create publication-quality read length distribution plot
+fig1 <- ggplot(combined_long, aes(x = name, y = value, color = Protocol)) +
+  stat_summary(geom = "line", fun = "mean", size = 0.7) +
+  stat_summary(geom = "ribbon", fun.data = "mean_se", alpha = 0.2, 
+               aes(fill = Protocol), color = NA) +
+  scale_x_continuous(limits = c(0, 3000), 
+                     breaks = seq(0, 3000, 500),
+                     expand = c(0, 0)) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
+  scale_color_manual(values = protocol_colors) +
+  scale_fill_manual(values = protocol_colors) +
+  labs(x = "Read length (bp)",
+       y = "Frequency (%)",
+       color = "Protocol",
+       fill = "Protocol") +
+  nature_theme() +
+  theme(legend.position = c(0.8, 0.8),
+        legend.background = element_rect(fill = "white", color = "black", size = 0.3))
+
+print(fig1)
+
+# ==========================================
+# FIGURE 2: NanoPlot Quality Metrics
+# ==========================================
+
+nanoplot <- read.csv("nanoplot_direct2sub.csv", header = TRUE, row.names = 1)
+nanoplot <- nanoplot[, c(1, 2, 7:9)]
+np_melt <- reshape2::melt(nanoplot, id.vars = c(1, 2))
+
+# Debug: Check the data structure and ranges
+cat("NanoPlot data summary:\n")
+print(summary(np_melt))
+cat("\nUnique variables:\n")
+print(unique(np_melt$variable))
+cat("\nData range by variable:\n")
+for(var in unique(np_melt$variable)) {
+  range_vals <- range(as.numeric(np_melt[np_melt$variable == var, "value"]), na.rm = TRUE)
+  cat(var, ":", range_vals[1], "to", range_vals[2], "\n")
+}
+
+# Create individual plots for each metric
+# A. Median Read Length
+fig2a <- ggplot(np_melt[np_melt$variable == "Median.read.length",], 
+                aes(x = Condition, y = as.numeric(value), fill = Protocol)) + 
+  stat_summary(fun = "mean", geom = "bar", position = position_dodge(0.8), 
+               width = 0.7, color = "black", size = 0.3) + 
+  stat_summary(fun.data = "mean_se", geom = "errorbar", 
+               position = position_dodge(0.8), width = 0.3, size = 0.5) +
+  scale_y_continuous(limits = c(0, 1000), expand = c(0, 0)) +
+  scale_fill_manual(values = protocol_colors) +
+  labs(x = "", y = "Median read length (bp)", fill = "Protocol") +
+  nature_theme() +
+  theme(legend.position = "none")
+
+# B. Median Percent Identity
+# First check the data range to set appropriate limits
+identity_range <- range(as.numeric(np_melt[np_melt$variable == "Median.percent.identity", "value"]), na.rm = TRUE)
+y_min <- max(0, floor(identity_range[1] - 2))  # Add some padding below
+y_max <- min(100, ceiling(identity_range[2] + 2))  # Add some padding above
+
+fig2b <- ggplot(np_melt[np_melt$variable == "Median.percent.identity",], 
+                aes(x = Condition, y = as.numeric(value), fill = Protocol)) + 
+  stat_summary(fun = "mean", geom = "bar", position = position_dodge(0.8), 
+               width = 0.7, color = "black", size = 0.3) + 
+  stat_summary(fun.data = "mean_se", geom = "errorbar", 
+               position = position_dodge(0.8), width = 0.3, size = 0.5) +
+  scale_y_continuous(limits = c(y_min, y_max), expand = c(0, 0),
+                     breaks = seq(y_min, y_max, length.out = 5)) +
+  scale_fill_manual(values = protocol_colors) +
+  labs(x = "", y = "Median read identity (%)", fill = "Protocol") +
+  nature_theme() +
+  theme(legend.position = "none")
+
+# Print the data range for debugging
+cat("Median read identity range:", identity_range[1], "to", identity_range[2], "\n")
+
+# C. Median Read Quality
+fig2c <- ggplot(np_melt[np_melt$variable == "Median.read.quality",], 
+                aes(x = Condition, y = as.numeric(value), fill = Protocol)) + 
+  stat_summary(fun = "mean", geom = "bar", position = position_dodge(0.8), 
+               width = 0.7, color = "black", size = 0.3) + 
+  stat_summary(fun.data = "mean_se", geom = "errorbar", 
+               position = position_dodge(0.8), width = 0.3, size = 0.5) +
+  scale_y_continuous(limits = c(0, 20), expand = c(0, 0)) +
+  scale_fill_manual(values = protocol_colors) +
+  labs(x = "Treatment", y = "Median read quality", fill = "Protocol") +
+  nature_theme()
+
+# Combine panels with shared legend
+fig2_combined <- ggarrange(fig2a, fig2b, fig2c, 
+                          ncol = 1, nrow = 3,
+                          common.legend = TRUE, 
+                          legend = "right",
+                          labels = c("a", "b", "c"),
+                          font.label = list(size = 9, face = "bold"))
+
+print(fig2_combined)
+
+# ==========================================
+# FIGURE 3: Coverage per Transcript
+# ==========================================
+
+allcov <- read.csv("allcoverage.csv")
+tallcov <- as.data.frame(t(allcov[, 2:13]))
+tallcov$Protocol <- coldata$Protocol
+colnames(tallcov) <- c(allcov$X, "Protocol")
+cov_m <- pivot_longer(tallcov, cols = 1:40)
+cov_m$name <- as.numeric(cov_m$name)
+
+fig3 <- ggplot(cov_m, aes(x = name, y = value, color = Protocol)) +
+  stat_summary(geom = "line", fun = "mean", size = 0.7) +
+  stat_summary(geom = "ribbon", fun.data = "mean_se", alpha = 0.2, 
+               aes(fill = Protocol), color = NA) +
+  scale_x_continuous(breaks = seq(0, 40, 10), expand = c(0, 0)) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
+  scale_color_manual(values = protocol_colors) +
+  scale_fill_manual(values = protocol_colors) +
+  labs(x = "Transcript coverage (%)",
+       y = "Frequency (%)",
+       color = "Protocol",
+       fill = "Protocol") +
+  nature_theme() +
+  theme(legend.position = c(0.8, 0.8),
+        legend.background = element_rect(fill = "white", color = "black", size = 0.3))
+
+print(fig3)
+
+# ==========================================
+# Statistical Analysis
+# ==========================================
+
+# Perform statistical tests for nanoplot data
+np_ctrl <- nanoplot[nanoplot$Condition == "control",]
+np_il6 <- nanoplot[nanoplot$Condition == "IL6",]
+
+# T-tests for median length
+ctrl_length_test <- t_test(np_ctrl, Median.read.length ~ Protocol)
+il6_length_test <- t_test(np_il6, Median.read.length ~ Protocol)
+
+# T-tests for median quality
+ctrl_quality_test <- t_test(np_ctrl, Median.read.quality ~ Protocol)
+il6_quality_test <- t_test(np_il6, Median.read.quality ~ Protocol)
+
+# Print statistical results
+cat("Statistical Analysis Results:\n")
+cat("=============================\n")
+cat("Control - Median Length:", ctrl_length_test$p, "\n")
+cat("IL6 - Median Length:", il6_length_test$p, "\n")
+cat("Control - Median Quality:", ctrl_quality_test$p, "\n")
+cat("IL6 - Median Quality:", il6_quality_test$p, "\n")
+
+# ==========================================
+# Save plots for publication
+# ==========================================
+
+# Method 1: Save with Cairo for better font handling
+if(require("Cairo", quietly = TRUE)) {
+  # Save as PDF with Cairo (better font support)
+  ggsave("Figure1_ReadLength.pdf", fig1, width = 85, height = 60, units = "mm", 
+         dpi = 300, device = cairo_pdf)
+  ggsave("Figure2_QualityMetrics.pdf", fig2_combined, width = 85, height = 120, units = "mm", 
+         dpi = 300, device = cairo_pdf)
+  ggsave("Figure3_Coverage.pdf", fig3, width = 85, height = 60, units = "mm", 
+         dpi = 300, device = cairo_pdf)
+  
+  # Save as PNG (alternative format)
+  ggsave("Figure1_ReadLength.png", fig1, width = 85, height = 60, units = "mm", dpi = 300)
+  ggsave("Figure2_QualityMetrics.png", fig2_combined, width = 85, height = 120, units = "mm", dpi = 300)
+  ggsave("Figure3_Coverage.png", fig3, width = 85, height = 60, units = "mm", dpi = 300)
+  
+  cat("Plots saved successfully with Cairo!\n")
+} else {
+  # Fallback method: Use PNG format which handles fonts better
+  ggsave("Figure1_ReadLength.png", fig1, width = 85, height = 60, units = "mm", dpi = 300)
+  ggsave("Figure2_QualityMetrics.png", fig2_combined, width = 85, height = 120, units = "mm", dpi = 300)
+  ggsave("Figure3_Coverage.png", fig3, width = 85, height = 60, units = "mm", dpi = 300)
+  
+  cat("Plots saved as PNG format (install Cairo package for PDF support)\n")
+  cat("To install Cairo: install.packages('Cairo')\n")
+}
+
+# Alternative: Save using different device
+tryCatch({
+  pdf("Figure1_ReadLength_alt.pdf", width = 85/25.4, height = 60/25.4)
+  print(fig1)
+  dev.off()
+  
+  pdf("Figure2_QualityMetrics_alt.pdf", width = 85/25.4, height = 120/25.4)
+  print(fig2_combined)
+  dev.off()
+  
+  pdf("Figure3_Coverage_alt.pdf", width = 85/25.4, height = 60/25.4)
+  print(fig3)
+  dev.off()
+  
+  cat("Alternative PDF files also saved!\n")
+}, error = function(e) {
+  cat("Alternative PDF saving failed:", e$message, "\n")
+})
+```
+
+
+
+
+```{r}
+# Nature Journal Style Publication Plots - Complete Analysis
+# Author: Rebecca L
+# Date: 2024-08-09
+
+# Load required libraries
+library(DESeq2)
+library(DEXSeq)
+library(pheatmap)
+library(ggplot2)
+library(dplyr)
+library(reshape2)
+library(vsn)
+library(ggpubr)
+library(tidyr)
+library(data.table)
+library(venn)
+library(gplots)
+library(summarytools)
+library(ggvenn)
+library(rstatix)
+
+# ==========================================
+# SETUP: Colors, Fonts, and Theme
+# ==========================================
+
+# Check available fonts and use appropriate one
+available_fonts <- c("Helvetica", "Arial", "sans")
+font_to_use <- available_fonts[available_fonts %in% names(pdfFonts())][1]
+if(is.na(font_to_use)) font_to_use <- "sans"
+
+# Define Nature journal color palette
+nature_colors <- c("#E64B35", "#4DBBD5", "#00A087", "#3C5488", "#F39B7F", "#8491B4")
+# Updated protocol colors to match original code but with Nature palette
+protocol_colors <- c("cDNA" = "#4DBBD5", "dRNA" = "#E64B35")
+
+# Custom Nature-style theme
+nature_theme <- function() {
+  theme_classic() +
+  theme(
+    # Text elements
+    text = element_text(family = font_to_use, color = "black"),
+    axis.title = element_text(size = 8, color = "black"),
+    axis.text = element_text(size = 7, color = "black"),
+    legend.title = element_text(size = 8, color = "black"),
+    legend.text = element_text(size = 7, color = "black"),
+    plot.title = element_text(size = 9, color = "black", hjust = 0),
+    
+    # Lines and borders
+    axis.line = element_line(color = "black", size = 0.5),
+    axis.ticks = element_line(color = "black", size = 0.5),
+    
+    # Background
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA),
+    
+    # Legend
+    legend.background = element_rect(fill = "white", color = NA),
+    legend.key = element_rect(fill = "white", color = NA),
+    legend.position = "right",
+    
+    # Margins
+    plot.margin = margin(t = 5, r = 5, b = 5, l = 5, unit = "pt")
+  )
+}
+
+# ==========================================
+# DATA IMPORT
+# ==========================================
+
+allreads <- read.table("allreadlengths.csv", header = TRUE, sep = ",")
+coldata <- read.csv("sampleinfo.csv", header = TRUE, row.names = 1)
+
+# ==========================================
+# FIGURE 1: Read Length Distribution
+# ==========================================
+
+# Process read length data
+lallreads <- as.list(allreads)
+breakpoints <- c(seq(0, 10000, by = 100), 1000000)
+freq <- lapply(lallreads, hist, breaks = breakpoints, plot = FALSE, use.names = TRUE)
+freqlist <- lapply(freq, "[", 2)
+
+# Convert to percentages
+new_list <- lapply(freqlist, transform, percentage = 100 * counts/sum(counts))
+perclist <- lapply(new_list, "[", 2)
+
+# Combine to dataframe
+combined_freq <- bind_cols(perclist)
+colnames(combined_freq) <- names(perclist)
+
+# Add sample information
+comb <- as.data.frame(t(combined_freq))
+colnames(comb) <- breakpoints[1:101]
+comb$sample <- rownames(comb)
+comb$Condition <- coldata$Condition
+comb$Protocol <- coldata$Protocol
+
+# Convert to long format
+combined_long <- pivot_longer(comb, cols = where(is.numeric))
+combined_long$name <- as.numeric(combined_long$name)
+
+# Create publication-quality read length distribution plot
+fig1 <- ggplot(combined_long, aes(x = name, y = value, color = Protocol)) +
+  stat_summary(geom = "line", fun = "mean", size = 0.7) +
+  stat_summary(geom = "ribbon", fun.data = "mean_se", alpha = 0.2, 
+               aes(fill = Protocol), color = NA) +
+  scale_x_continuous(limits = c(0, 3000), 
+                     breaks = seq(0, 3000, 500),
+                     expand = c(0, 0)) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
+  scale_color_manual(values = protocol_colors) +
+  scale_fill_manual(values = protocol_colors) +
+  labs(x = "Read length (bp)",
+       y = "Frequency (%)",
+       color = "Protocol",
+       fill = "Protocol") +
+  nature_theme() +
+  theme(legend.position = c(0.85, 0.85),
+        legend.background = element_rect(fill = "white", color = "black", size = 0.3),
+        legend.margin = margin(t = 2, r = 4, b = 2, l = 4, unit = "pt"))
+
+print(fig1)
+
+# ==========================================
+# FIGURE 2: NanoPlot Quality Metrics
+# ==========================================
+
+nanoplot <- read.csv("nanoplot_direct2sub.csv", header = TRUE, row.names = 1)
+nanoplot <- nanoplot[, c(1, 2, 7:9)]
+np_melt <- reshape2::melt(nanoplot, id.vars = c(1, 2))
+
+# Debug: Check the data structure and ranges
+cat("NanoPlot data summary:\n")
+print(summary(np_melt))
+cat("\nData range by variable:\n")
+for(var in unique(np_melt$variable)) {
+  range_vals <- range(as.numeric(np_melt[np_melt$variable == var, "value"]), na.rm = TRUE)
+  cat(var, ":", range_vals[1], "to", range_vals[2], "\n")
+}
+
+# A. Median Read Length
+fig2a <- ggplot(np_melt[np_melt$variable == "Median.read.length",], 
+                aes(x = Condition, y = as.numeric(value), fill = Protocol)) + 
+  stat_summary(fun = "mean", geom = "bar", position = position_dodge(0.8), 
+               width = 0.7, color = "black", size = 0.3) + 
+  stat_summary(fun.data = "mean_se", geom = "errorbar", 
+               position = position_dodge(0.8), width = 0.3, size = 0.5) +
+  scale_y_continuous(limits = c(0, 1000), expand = c(0, 0),
+                     breaks = seq(0, 1000, 250)) +
+  scale_fill_manual(values = protocol_colors) +
+  labs(x = "", y = "Median read length (bp)", fill = "Protocol") +
+  nature_theme() +
+  theme(legend.position = "none")
+
+# B. Median Percent Identity - Dynamic scaling
+identity_range <- range(as.numeric(np_melt[np_melt$variable == "Median.percent.identity", "value"]), na.rm = TRUE)
+y_min <- max(85, floor(identity_range[1] - 1))  # Set minimum to 85% or data min
+y_max <- min(100, ceiling(identity_range[2] + 1))  # Set maximum to 100% or data max
+
+fig2b <- ggplot(np_melt[np_melt$variable == "Median.percent.identity",], 
+                aes(x = Condition, y = as.numeric(value), fill = Protocol)) + 
+  stat_summary(fun = "mean", geom = "bar", position = position_dodge(0.8), 
+               width = 0.7, color = "black", size = 0.3) + 
+  stat_summary(fun.data = "mean_se", geom = "errorbar", 
+               position = position_dodge(0.8), width = 0.3, size = 0.5) +
+  scale_y_continuous(limits = c(y_min, y_max), expand = c(0, 0),
+                     breaks = seq(y_min, y_max, length.out = 4)) +
+  scale_fill_manual(values = protocol_colors) +
+  labs(x = "", y = "Median read identity (%)", fill = "Protocol") +
+  nature_theme() +
+  theme(legend.position = "none")
+
+# C. Median Read Quality
+fig2c <- ggplot(np_melt[np_melt$variable == "Median.read.quality",], 
+                aes(x = Condition, y = as.numeric(value), fill = Protocol)) + 
+  stat_summary(fun = "mean", geom = "bar", position = position_dodge(0.8), 
+               width = 0.7, color = "black", size = 0.3) + 
+  stat_summary(fun.data = "mean_se", geom = "errorbar", 
+               position = position_dodge(0.8), width = 0.3, size = 0.5) +
+  scale_y_continuous(limits = c(0, 20), expand = c(0, 0),
+                     breaks = seq(0, 20, 5)) +
+  scale_fill_manual(values = protocol_colors) +
+  labs(x = "Treatment", y = "Median read quality", fill = "Protocol") +
+  nature_theme()
+
+# Combine panels with shared legend
+fig2_combined <- ggarrange(fig2a, fig2b, fig2c, 
+                          ncol = 1, nrow = 3,
+                          common.legend = TRUE, 
+                          legend = "right",
+                          labels = c("a", "b", "c"),
+                          font.label = list(size = 9, face = "bold"))
+
+print(fig2_combined)
+
+# ==========================================
+# FIGURE 3: Gene Body Coverage
+# ==========================================
+
+gbcov <- read.csv("genebodycov.csv", header = TRUE)
+gbcov_m <- pivot_longer(gbcov, cols = 2:5)
+gbcov_m$subset <- ifelse(grepl("all", gbcov_m$name), 'All', '>1000bp')
+gbcov_m$protocol <- ifelse(grepl("cdna", gbcov_m$name), "cDNA", "dRNA")
+
+fig3 <- ggplot(gbcov_m, aes(x = Percentile, y = value, color = protocol, linetype = subset)) +
+  geom_line(size = 0.7) +
+  scale_x_continuous(breaks = seq(0, 100, 25), expand = c(0, 0)) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
+  scale_color_manual(values = protocol_colors, name = "Protocol") +
+  scale_linetype_manual(values = c("All" = "solid", ">1000bp" = "dashed"), 
+                       name = "Gene set") +
+  labs(x = "Gene body percentile (5' → 3')",
+       y = "Coverage",
+       color = "Protocol",
+       linetype = "Gene set") +
+  nature_theme() +
+  theme(legend.position = c(0.8, 0.3),
+        legend.background = element_rect(fill = "white", color = "black", size = 0.3),
+        legend.margin = margin(t = 2, r = 4, b = 2, l = 4, unit = "pt"))
+
+print(fig3)
+
+# ==========================================
+# FIGURE 4: Coverage per Transcript
+# ==========================================
+
+allcov <- read.csv("allcoverage.csv")
+tallcov <- as.data.frame(t(allcov[, 2:13]))
+tallcov$Protocol <- coldata$Protocol
+colnames(tallcov) <- c(allcov$X, "Protocol")
+cov_m <- pivot_longer(tallcov, cols = 1:40)
+cov_m$name <- as.numeric(cov_m$name)
+
+fig4 <- ggplot(cov_m, aes(x = name, y = value, color = Protocol)) +
+  stat_summary(geom = "line", fun = "mean", size = 0.7) +
+  stat_summary(geom = "ribbon", fun.data = "mean_se", alpha = 0.2, 
+               aes(fill = Protocol), color = NA) +
+  scale_x_continuous(breaks = seq(0, 40, 10), expand = c(0, 0)) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
+  scale_color_manual(values = protocol_colors) +
+  scale_fill_manual(values = protocol_colors) +
+  labs(x = "Transcript coverage (%)",
+       y = "Frequency (%)",
+       color = "Protocol",
+       fill = "Protocol") +
+  nature_theme() +
+  theme(legend.position = c(0.8, 0.8),
+        legend.background = element_rect(fill = "white", color = "black", size = 0.3),
+        legend.margin = margin(t = 2, r = 4, b = 2, l = 4, unit = "pt"))
+
+print(fig4)
+
+# ==========================================
+# Statistical Analysis
+# ==========================================
+
+# Perform statistical tests for nanoplot data
+np_ctrl <- nanoplot[nanoplot$Condition == "control",]
+np_il6 <- nanoplot[nanoplot$Condition == "IL6",]
+
+# T-tests for median length
+ctrl_length_test <- t_test(np_ctrl, Median.read.length ~ Protocol)
+il6_length_test <- t_test(np_il6, Median.read.length ~ Protocol)
+
+# T-tests for median quality
+ctrl_quality_test <- t_test(np_ctrl, Median.read.quality ~ Protocol)
+il6_quality_test <- t_test(np_il6, Median.read.quality ~ Protocol)
+
+# Print statistical results
+cat("\n==========================================\n")
+cat("Statistical Analysis Results:\n")
+cat("==========================================\n")
+cat("Control - Median Length p-value:", round(ctrl_length_test$p, 4), "\n")
+cat("IL6 - Median Length p-value:", round(il6_length_test$p, 4), "\n")
+cat("Control - Median Quality p-value:", round(ctrl_quality_test$p, 4), "\n")
+cat("IL6 - Median Quality p-value:", round(il6_quality_test$p, 4), "\n")
+cat("==========================================\n")
+
+# ==========================================
+# Create Multi-panel Figure for Publication
+# ==========================================
+
+# Create a comprehensive figure combining key plots
+main_figure <- ggarrange(
+  fig1,
+  ggarrange(fig3, fig4, ncol = 1, nrow = 2, 
+           labels = c("c", "d"), font.label = list(size = 9, face = "bold")),
+  ncol = 2, nrow = 1,
+  labels = c("a", ""), 
+  font.label = list(size = 9, face = "bold"),
+  widths = c(1, 1)
+)
+
+print(main_figure)
+
+# ==========================================
+# Save plots for publication
+# ==========================================
+
+# Method 1: Save with Cairo for better font handling
+if(require("Cairo", quietly = TRUE)) {
+  # Save individual figures
+  ggsave("Figure1_ReadLength.pdf", fig1, width = 85, height = 60, units = "mm", 
+         dpi = 300, device = cairo_pdf)
+  ggsave("Figure2_QualityMetrics.pdf", fig2_combined, width = 85, height = 120, units = "mm", 
+         dpi = 300, device = cairo_pdf)
+  ggsave("Figure3_GeneCoverage.pdf", fig3, width = 85, height = 60, units = "mm", 
+         dpi = 300, device = cairo_pdf)
+  ggsave("Figure4_TranscriptCoverage.pdf", fig4, width = 85, height = 60, units = "mm", 
+         dpi = 300, device = cairo_pdf)
+  ggsave("MainFigure_Combined.pdf", main_figure, width = 170, height = 80, units = "mm", 
+         dpi = 300, device = cairo_pdf)
+  
+  # Save as high-res PNG alternatives
+  ggsave("Figure1_ReadLength.png", fig1, width = 85, height = 60, units = "mm", dpi = 300)
+  ggsave("Figure2_QualityMetrics.png", fig2_combined, width = 85, height = 120, units = "mm", dpi = 300)
+  ggsave("Figure3_GeneCoverage.png", fig3, width = 85, height = 60, units = "mm", dpi = 300)
+  ggsave("Figure4_TranscriptCoverage.png", fig4, width = 85, height = 60, units = "mm", dpi = 300)
+  ggsave("MainFigure_Combined.png", main_figure, width = 170, height = 80, units = "mm", dpi = 300)
+  
+  cat("All plots saved successfully with Cairo!\n")
+} else {
+  # Fallback method: Use PNG format
+  ggsave("Figure1_ReadLength.png", fig1, width = 85, height = 60, units = "mm", dpi = 300)
+  ggsave("Figure2_QualityMetrics.png", fig2_combined, width = 85, height = 120, units = "mm", dpi = 300)
+  ggsave("Figure3_GeneCoverage.png", fig3, width = 85, height = 60, units = "mm", dpi = 300)
+  ggsave("Figure4_TranscriptCoverage.png", fig4, width = 85, height = 60, units = "mm", dpi = 300)
+  ggsave("MainFigure_Combined.png", main_figure, width = 170, height = 80, units = "mm", dpi = 300)
+  
+  cat("Plots saved as PNG format (install Cairo package for PDF support)\n")
+  cat("To install Cairo: install.packages('Cairo')\n")
+}
+
+# Alternative PDF saving method
+tryCatch({
+  pdf("Figure1_ReadLength_alt.pdf", width = 85/25.4, height = 60/25.4)
+  print(fig1)
+  dev.off()
+  
+  pdf("Figure2_QualityMetrics_alt.pdf", width = 85/25.4, height = 120/25.4)
+  print(fig2_combined)
+  dev.off()
+  
+  pdf("Figure3_GeneCoverage_alt.pdf", width = 85/25.4, height = 60/25.4)
+  print(fig3)
+  dev.off()
+  
+  pdf("Figure4_TranscriptCoverage_alt.pdf", width = 85/25.4, height = 60/25.4)
+  print(fig4)
+  dev.off()
+  
+  pdf("MainFigure_Combined_alt.pdf", width = 170/25.4, height = 80/25.4)
+  print(main_figure)
+  dev.off()
+  
+  cat("Alternative PDF files also saved!\n")
+}, error = function(e) {
+  cat("Alternative PDF saving failed:", e$message, "\n")
+})
+
+cat("\n==========================================\n")
+cat("PUBLICATION READY FIGURES GENERATED\n")
+cat("==========================================\n")
+cat("Individual figures:\n")
+cat("- Figure1: Read length distribution\n")
+cat("- Figure2: Quality metrics (3 panels)\n") 
+cat("- Figure3: Gene body coverage\n")
+cat("- Figure4: Transcript coverage\n")
+cat("- MainFigure: Combined layout\n")
+cat("==========================================\n")
+```

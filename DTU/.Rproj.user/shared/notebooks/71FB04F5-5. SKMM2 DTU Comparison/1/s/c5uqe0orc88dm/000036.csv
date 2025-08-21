@@ -1,0 +1,8 @@
+"0","#Sig in cDNA only - plot all"
+"0","cdna_comb=comb[comb$groupID %in% intersections_gene$`PCR-cDNA`, -1]"
+"0","cdna_comb_m=pivot_longer(cdna_comb, cols=3:4)"
+"0",""
+"0","for(i in unique(cdna_comb_m$HGNC)){"
+"0","  plot1=plotDTUcomp(cdna_comb_m, i)"
+"0","  print(plot1)"
+"0","}"

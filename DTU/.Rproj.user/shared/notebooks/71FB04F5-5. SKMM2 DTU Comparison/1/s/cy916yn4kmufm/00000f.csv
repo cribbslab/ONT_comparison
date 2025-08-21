@@ -1,0 +1,11 @@
+"0","dtu_comp=list('PCR-cDNA'=cdna_stat$txID[cdna_stat$transcript<0.05], dRNA=drna_stat$txID[drna_stat$transcript<0.05])"
+"0","dtu_gene=list('PCR-cDNA'=cdna_stat$geneID[cdna_stat$gene<0.05], dRNA=drna_stat$geneID[drna_stat$gene<0.05])"
+"0",""
+"0","#Overlap transcripts"
+"0","library(ggvenn)"
+"2","Loading required package: grid
+"
+"0","ggvenn(dtu_comp, "
+"0","       show_percentage=FALSE, "
+"0","       fill_color=c(""turquoise3"", ""navy""), "
+"0","       auto_scale=TRUE)"

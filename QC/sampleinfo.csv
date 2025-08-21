@@ -1,0 +1,13 @@
+﻿sample,Protocol,Condition
+SKMM2_cdna_ctrl1,cDNA,Control
+SKMM2_cdna_ctrl2,cDNA,Control
+SKMM2_cdna_ctrl3,cDNA,Control
+SMM2_cdna_IL61,cDNA,IL6
+SMM2_cdna_IL62,cDNA,IL6
+SMM2_cdna_IL63,cDNA,IL6
+SKMM2_drna_ctrl1,dRNA,Control
+SKMM2_drna_ctrl2,dRNA,Control
+SKMM2_drna_ctrl3,dRNA,Control
+SKMM2_drna_IL61,dRNA,IL6
+SKMM2_drna_IL62,dRNA,IL6
+SKMM2_drna_IL63,dRNA,IL6

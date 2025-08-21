@@ -1,0 +1,31 @@
+"0","cat(""\n==========================================\n"")"
+"1","
+==========================================
+"
+"0","cat(""PUBLICATION READY FIGURES GENERATED\n"")"
+"1","PUBLICATION READY FIGURES GENERATED
+"
+"0","cat(""==========================================\n"")"
+"1","==========================================
+"
+"0","cat(""Individual figures:\n"")"
+"1","Individual figures:
+"
+"0","cat(""- Figure1: Read length distribution\n"")"
+"1","- Figure1: Read length distribution
+"
+"0","cat(""- Figure2: Quality metrics (3 panels)\n"") "
+"1","- Figure2: Quality metrics (3 panels)
+"
+"0","cat(""- Figure3: Gene body coverage\n"")"
+"1","- Figure3: Gene body coverage
+"
+"0","cat(""- Figure4: Transcript coverage\n"")"
+"1","- Figure4: Transcript coverage
+"
+"0","cat(""- MainFigure: Combined layout\n"")"
+"1","- MainFigure: Combined layout
+"
+"0","cat(""==========================================\n"")"
+"1","==========================================
+"

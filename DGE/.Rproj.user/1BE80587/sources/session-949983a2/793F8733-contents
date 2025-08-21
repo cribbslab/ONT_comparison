@@ -1,0 +1,152 @@
+---
+title: "Size Distribution"
+author: "Rebecca L"
+date: "2024-08-09"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(DESeq2)
+library(DEXSeq)
+library(pheatmap)
+library(ggplot2)
+library(dplyr)
+library(reshape2)
+library(vsn)
+library(ggpubr)
+library(tidyr)
+library(data.table)
+library(venn)
+library(gplots)
+library(summarytools)
+library(ggvenn)
+library(rstatix)
+```
+
+
+```{r import data}
+allreads=read.table("allreadlengths.csv", header=TRUE, sep=",")
+coldata=read.csv("sampleinfo.csv", header=TRUE, row.names=1)
+```
+
+```{r raw read lengths, echo=FALSE}
+
+lallreads=as.list(allreads)
+
+#Frequency Dist
+breakpoints=c(seq(0, 10000, by=100),1000000)
+freq=lapply(lallreads, hist, breaks=breakpoints, plot=FALSE, use.names=TRUE)
+freqlist=lapply(freq, "[", 2)
+
+#Convert to %
+new_list=lapply(freqlist, transform, percentage= 100* counts/sum(counts))
+perclist=lapply(new_list, "[", 2)
+
+#Combine to df
+combined_freq=bind_cols(perclist)
+colnames(combined_freq)=names(perclist)
+
+#add sample information and grouping variables
+comb=as.data.frame(t(combined_freq))
+colnames(comb)=breakpoints[1:101]
+comb$sample=rownames(comb)
+comb$Condition=coldata$Condition
+comb$Protocol=coldata$Protocol
+
+#Convert to long df for plotting
+combined_long=pivot_longer(comb, cols=where(is.numeric))
+combined_long$name=as.numeric(combined_long$name)
+
+#Line plot
+ggplot(combined_long, aes(x=name, y=value, colour=Protocol))+
+  stat_summary(geom="point", fun="mean", size=0.5)+
+  stat_summary(geom="errorbar")+
+  geom_line()+
+  scale_x_continuous(limits=c(0,3000))+
+  xlab("Read Length (bp)")+
+  ylab("Frequency (%)")+
+  labs(colour="Data Set")+
+  scale_colour_manual(values=c("turquoise3","navy"))+
+  theme(
+    legend.text = element_text(size = 14),
+    axis.text = element_text(size = 18), 
+    axis.title.x=element_text(size=18),
+    axis.title.y=element_text(size=18)
+  )
+```
+```{r nanoplot}
+nanoplot=read.csv("nanoplot_direct2sub.csv", header=TRUE, row.names=1)
+nanoplot=nanoplot[, c(1,2,7:9)]
+np_melt=melt(nanoplot, id.vars=c(1,2))
+
+#Median Length
+ggplot(np_melt[np_melt$variable=="Median.read.length",], aes(x=Condition, y=as.numeric(value), fill=Protocol, group=Protocol)) + stat_summary(fun="mean", geom="bar", aes(fill=Protocol), position=position_dodge(0.95)) + stat_summary(geom="errorbar", colour="black", position=position_dodge(0.95))+facet_wrap(~variable) + ylab("Median Read Identity")+scale_y_continuous(limits=c(0,1000))+scale_fill_manual(values=c("navy", "turquoise3"))
+
+#Median Identity
+ggplot(np_melt[np_melt$variable=="Median.percent.identity",], aes(x=Condition, y=as.numeric(value), fill=Protocol, group=Protocol)) + stat_summary(fun="mean", geom="bar", aes(fill=Protocol), position=position_dodge(0.95)) + stat_summary(geom="errorbar", colour="black", position=position_dodge(0.95))+facet_wrap(~variable) + ylab("Median Read Identity")+scale_y_continuous(limits=c(0,100))+scale_fill_manual(values=c("navy", "turquoise3"))
+
+#Median quality
+ggplot(np_melt[np_melt$variable=="Median.read.quality",], aes(x=Condition, y=as.numeric(value), fill=Protocol, group=Protocol)) + stat_summary(fun="mean", geom="bar", aes(fill=Protocol), position=position_dodge(0.95)) + stat_summary(geom="errorbar", colour="black", position=position_dodge(0.95))+facet_wrap(~variable) + ylab("Median Read Quality")+scale_y_continuous(limits=c(0,20))+ scale_fill_manual(values=c("navy", "turquoise3"))
+
+
+##For Stats
+np_ctrl=nanoplot[nanoplot$Condition=="control",]
+np_il6=nanoplot[nanoplot$Condition=="IL6",]
+
+#Median length
+t_test(np_ctrl, Median.read.length ~ Protocol)
+t_test(np_il6, Median.read.length ~ Protocol)
+
+#Median quality
+t_test(np_ctrl, Median.read.quality ~ Protocol)
+t_test(np_il6, Median.read.quality ~ Protocol)
+
+```
+
+```{r gene body coverage, eval=FALSE, include=FALSE}
+
+#Read output from RSeQC, take mean and convert to %
+
+gbcov=read.csv("genebodycov.csv", header=TRUE)
+
+gbcov_m=pivot_longer(gbcov, cols=2:5)
+gbcov_m$subset=ifelse(grepl("all",gbcov_m$name),'All','>1000bp')
+gbcov_m$protocol=ifelse(grepl("cdna", gbcov_m$name), "cDNA", "dRNA")
+
+
+ggplot(gbcov_m, aes(x=Percentile, y=value, colour=protocol, linetype=subset))+geom_line()+
+  ylab("Coverage")+
+  xlab("Gene Body Percentile (5'-> 3')")+
+  scale_colour_manual(values=c("turquoise3", "navy"))
+
+
+
+```
+
+```{r coverage per transcript}
+  
+allcov=read.csv("allcoverage.csv")
+tallcov=as.data.frame(t(allcov[,2:13]))
+tallcov$Protocol=coldata$Protocol
+colnames(tallcov)=c(allcov$X, "Protocol")
+cov_m=pivot_longer(tallcov, cols=1:40)
+cov_m$name=as.numeric(cov_m$name)
+
+ggplot(cov_m, aes(x=name, y=value, colour=Protocol, group=Protocol))+
+  stat_summary(geom="point", fun="mean", size=0.5)+
+  stat_summary(geom="errorbar")+
+  geom_line()+
+  xlab("Coverage of Transcript")+
+  ylab("Frequency (%)")+
+  scale_colour_manual(values=c("turquoise3","navy"))+
+  theme(
+    legend.text = element_text(size = 14),
+    axis.text = element_text(size = 18), 
+    axis.title.x=element_text(size=18),
+    axis.title.y=element_text(size=18)
+  )
+
+```
+
+
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      

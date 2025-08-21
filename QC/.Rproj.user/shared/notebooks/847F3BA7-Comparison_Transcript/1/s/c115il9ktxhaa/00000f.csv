@@ -1,0 +1,4 @@
+"0",""
+"0",""
+"0","ggvenn(data=list(""dRNA""=drna$all$TXNAME, ""cDNA""=cdna$all$TXNAME),"
+"0","               fill_color=c(""navy"", ""turquoise""), auto_scale=TRUE, show_percentage = FALSE)+ggtitle(""All Transcripts"")"
