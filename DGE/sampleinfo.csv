@@ -11,3 +11,9 @@ SKMM2_drna_ctrl3,dRNA,Control
 SKMM2_drna_IL61,dRNA,IL6
 SKMM2_drna_IL62,dRNA,IL6
 SKMM2_drna_IL63,dRNA,IL6
+control_1_cDNA.pychopper.subsampled.sorted,cDNA,Control
+control_2_cDNA.pychopper.subsampled.sorted,cDNA,Control
+control_3_cDNA.pychopper.subsampled.sorted,cDNA,Control
+IL6_1_cDNA.pychopper.subsampled.sorted,cDNA,IL6
+IL6_2_cDNA.pychopper.subsampled.sorted,cDNA,IL6
+IL6_3_cDNA.pychopper.subsampled.sorted,cDNA,IL6

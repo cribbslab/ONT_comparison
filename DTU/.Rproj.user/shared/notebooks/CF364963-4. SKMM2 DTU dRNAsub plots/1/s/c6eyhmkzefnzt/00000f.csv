@@ -1,7 +1,0 @@
-"0","#Subset count matrices to significant genes"
-"0","il6_sig=il6_count[il6_count$groupID %in% il6_stat$geneID,c(2:4,11:12)]"
-"0",""
-"0","#Calculate percentage of each transcript per gene"
-"0","il6_perc=il6_sig  %>% group_by(HGNC) %>% "
-"0","  mutate(Control = (Control* 100/sum(Control)), IL6=(IL6*100/sum(IL6)))"
-"0",""

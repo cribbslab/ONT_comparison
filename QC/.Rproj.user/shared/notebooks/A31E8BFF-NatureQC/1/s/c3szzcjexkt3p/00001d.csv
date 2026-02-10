@@ -1,0 +1,18 @@
+"0",""
+"0","# =========================================="
+"0","# Statistical Analysis"
+"0","# =========================================="
+"0",""
+"0","# Perform statistical tests for nanoplot data"
+"0","np_ctrl <- nanoplot[nanoplot$Condition == ""control"",]"
+"0","np_il6 <- nanoplot[nanoplot$Condition == ""IL6"",]"
+"0",""
+"0","# T-tests for median length"
+"0","ctrl_length_test <- t_test(np_ctrl, Median.read.length ~ Protocol)"
+"0","il6_length_test <- t_test(np_il6, Median.read.length ~ Protocol)"
+"0",""
+"0","# T-tests for median quality"
+"0","ctrl_quality_test <- t_test(np_ctrl, Median.read.quality ~ Protocol)"
+"2","Error in t.test.default(x = c(17.2, NA, NA), y = c(15.2, 14.9, 15.1),  : 
+  not enough 'x' observations
+"

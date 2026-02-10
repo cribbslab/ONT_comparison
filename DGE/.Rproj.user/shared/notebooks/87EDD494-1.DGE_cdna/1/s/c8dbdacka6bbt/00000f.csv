@@ -1,3 +1,0 @@
-"0","pca_res=prcomp(t(vsd_mat), scale.=TRUE)"
-"0","autoplot(pca_res, data=sampleinfo, colour='Condition', shape='Experiment', label=TRUE)"
-"0",""

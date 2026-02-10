@@ -18,7 +18,7 @@ library(ggpubr)
 ```{r data import}
 
 #Import matrices
-cdna_counts=read.table("cdna2_SKMM2_counts_gene.txt", sep="\t", header=TRUE)
+cdna_counts=read.table("cdnar104M_counts_gene.txt", sep="\t", header=TRUE)
 
 drna_counts=read.table("drnasub_SKMM2_counts_gene.txt", sep="\t", header=TRUE)
 

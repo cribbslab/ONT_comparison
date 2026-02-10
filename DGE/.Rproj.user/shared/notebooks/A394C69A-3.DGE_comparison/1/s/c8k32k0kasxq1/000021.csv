@@ -1,0 +1,4 @@
+"0",""
+"0","#PCA Plot"
+"0","pca_res=prcomp(t(vsd_mat), scale. = TRUE)"
+"0","print(autoplot(pca_res, data=sampleinfo, colour=""Condition"", shape=""Experiment"", size=4))"

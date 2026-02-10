@@ -1,8 +1,0 @@
-"0",""
-"0","#Plot each gene with significant DTU"
-"0","il6_m=pivot_longer(il6_sig, cols=c(2:3))"
-"0",""
-"0","for(i in unique(il6_m$HGNC)){"
-"0","  plot1=plotDTU(il6_m, i)"
-"0","  print(plot1)"
-"0","  }"

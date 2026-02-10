@@ -1,9 +1,9 @@
 {
     "id": "A4753BFA",
-    "path": "~/Dropbox/MANUSCRIPTS/ONT directRNA/QC/Nature_plots_CompareGene.Rmd",
+    "path": "~/Dropbox/Mac (3)/Documents/03_Programming/COMPUTATIONAL/ONT_comparison/QC/Nature_plots_CompareGene.Rmd",
     "project_path": "Nature_plots_CompareGene.Rmd",
     "type": "r_markdown",
-    "hash": "1204430299",
+    "hash": "2298140518",
     "contents": "",
     "dirty": false,
     "created": 1753800398982.0,
@@ -13,16 +13,16 @@
         "tempName": "Untitled1",
         "source_window_id": "",
         "Source": "Source",
-        "cursorPosition": "242,0",
+        "cursorPosition": "889,0",
         "scrollLine": "0",
         "last_setup_crc32": ""
     },
     "folds": "",
-    "lastKnownWriteTime": 1755327181,
+    "lastKnownWriteTime": 1770719615,
     "encoding": "UTF-8",
     "collab_server": "",
     "source_window": "",
-    "last_content_update": 1755327181033,
+    "last_content_update": 1770719615,
     "read_only": false,
     "read_only_alternatives": []
 }

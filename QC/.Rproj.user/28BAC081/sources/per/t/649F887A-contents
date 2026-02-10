@@ -57,7 +57,7 @@ nature_theme <- function() {
 }
 
 # Import data
-allreads <- read.table("allreadlengths.csv", header = TRUE, sep = ",")
+allreads <- read.table("combined_readlengths.csv", header = TRUE, sep = ",")
 coldata <- read.csv("sampleinfo.csv", header = TRUE, row.names = 1)
 
 # ==========================================

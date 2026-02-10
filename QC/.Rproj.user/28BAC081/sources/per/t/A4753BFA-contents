@@ -52,7 +52,7 @@ nature_colors <- c("#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E
 
 ```{r data_import}
 # Import matrices
-cdna_counts <- read.table("cdna2_SKMM2_counts_gene.txt", sep="\t", header=TRUE)
+cdna_counts <- read.table("cdnar104M_counts_gene.txt", sep="\t", header=TRUE)
 drna_counts <- read.table("drnasub_SKMM2_counts_gene.txt", sep="\t", header=TRUE)
 
 # Only keep genes with at least 1 count in at least 1 sample
@@ -410,7 +410,7 @@ nature_theme <- function() {
 # ==========================================
 
 # Import matrices
-cdna_counts <- read.table("cdna2_SKMM2_counts_gene.txt", sep = "\t", header = TRUE)
+cdna_counts <- read.table("cdnar104M_counts_gene.txt", sep = "\t", header = TRUE)
 drna_counts <- read.table("drnasub_SKMM2_counts_gene.txt", sep = "\t", header = TRUE)
 
 # Only keep genes with at least 1 count in at least 1 sample
@@ -756,25 +756,22 @@ cat(sprintf("Rows with at least one set membership: %d\n", total_rows_with_data)
 cat("Creating UpSet plot...\n")
 upset_colors <- c("#00A087", "#4DBBD5", "#F39B7F", "#00A087", "#4DBBD5", "#F39B7F")
 
-# Create the plot and capture it for display
-fig6_upset <- function() {
-  upset(upset_binary,
-        sets = c("cDNA_High", "cDNA_Medium", "cDNA_Low", "dRNA_High", "dRNA_Medium", "dRNA_Low"),
-        sets.bar.color = upset_colors,
-        main.bar.color = "#2C3E50",
-        matrix.color = "#34495E",
-        order.by = "freq",
-        decreasing = TRUE,
-        empty.intersections = "on",
-        text.scale = c(1.0, 0.8, 1.0, 0.8, 1.0, 0.8),
-        mainbar.y.label = "Intersection Size",
-        sets.x.label = "Set Size",
-        mb.ratio = c(0.65, 0.35),
-        keep.order = TRUE)
-}
+# Create the UpSet plot object once (required for saving: must use print() on this object)
+fig6_upset_plot <- upset(upset_data,
+                        sets = c("cDNA_High", "cDNA_Medium", "cDNA_Low",
+                                 "dRNA_High", "dRNA_Medium", "dRNA_Low"),
+                        sets.bar.color = upset_colors,
+                        main.bar.color = "black",
+                        matrix.color = "black",
+                        order.by = "freq",
+                        empty.intersections = "on",
+                        text.scale = c(1.0, 0.9, 1.0, 0.9, 1.0, 0.9),
+                        mainbar.y.label = "Intersection Size",
+                        sets.x.label = "Set Size",
+                        mb.ratio = c(0.7, 0.3))
 
-# Display the plot
-fig6_upset()
+# Display the plot (must print() so it also works when saving to file later)
+print(fig6_upset_plot)
 
 # Alternative: Create a simpler Venn diagram for major overlaps if UpSet fails
 create_simple_overlap_plot <- function() {
@@ -825,21 +822,14 @@ if(require("Cairo", quietly = TRUE)) {
   ggsave("publication_figures/Figure5_ComparisonHeatmap.pdf", fig5, 
          width = 85, height = 60, units = "mm", dpi = 300, device = cairo_pdf)
   
-  # Save UpSet plot with enhanced fallback
+  # Save UpSet plot as SVG (must use print(plot_object) for UpSetR to draw to file)
   tryCatch({
-    cat("Trying to save UpSet plot...\n")
-    png("publication_figures/Figure6_UpSetPlot.png", 
-        width = 170, height = 120, units = "mm", res = 300)
-    fig6_upset()
-    dev.off()
-    
-    # If PNG works, try PDF
-    pdf("publication_figures/Figure6_UpSetPlot.pdf", 
+    cat("Saving UpSet plot as SVG...\n")
+    svg("publication_figures/Figure6_UpSetPlot.svg", 
         width = 170/25.4, height = 120/25.4)
-    fig6_upset()
+    print(fig6_upset_plot)
     dev.off()
-    
-    cat("UpSet plots saved successfully!\n")
+    cat("UpSet plot saved as SVG successfully!\n")
   }, error = function(e) {
     cat("UpSet plot failed:", e$message, "\n")
     cat("Saving simple overlap plot instead...\n")
@@ -884,21 +874,10 @@ if(require("Cairo", quietly = TRUE)) {
     cat("PNG files available instead.\n")
   })
   
-  # Save UpSet plot
-  png("publication_figures/Figure6_UpSetPlot.png", 
-      width = 170, height = 120, units = "mm", res = 300)
-  upset(upset_data,
-        sets = c("PCR_cDNA_High", "PCR_cDNA_Medium", "PCR_cDNA_Low", 
-                 "Direct_RNA_High", "Direct_RNA_Medium", "Direct_RNA_Low"),
-        sets.bar.color = upset_colors,
-        main.bar.color = "black",
-        matrix.color = "black",
-        order.by = "freq",
-        empty.intersections = "on", 
-        text.scale = c(1.0, 0.9, 1.0, 0.9, 1.0, 0.9),
-        mainbar.y.label = "Intersection Size",
-        sets.x.label = "Set Size",
-        mb.ratio = c(0.7, 0.3))
+  # Save UpSet plot as SVG (must use print(plot_object) for UpSetR to draw to file)
+  svg("publication_figures/Figure6_UpSetPlot.svg", 
+      width = 170/25.4, height = 120/25.4)
+  print(fig6_upset_plot)
   dev.off()
   
   cat("Plots saved (install Cairo package for better PDF support)\n")
@@ -921,19 +900,8 @@ tryCatch({
   # Page 3: Heatmap
   print(fig5)
   
-  # Page 4: UpSet plot
-  upset(upset_data,
-        sets = c("PCR_cDNA_High", "PCR_cDNA_Medium", "PCR_cDNA_Low",
-                 "Direct_RNA_High", "Direct_RNA_Medium", "Direct_RNA_Low"),
-        sets.bar.color = upset_colors,
-        main.bar.color = "black",
-        matrix.color = "black",
-        order.by = "freq",
-        empty.intersections = "on",
-        text.scale = c(1.2, 1.0, 1.2, 1.0, 1.2, 1.0),
-        mainbar.y.label = "Intersection Size", 
-        sets.x.label = "Set Size",
-        mb.ratio = c(0.7, 0.3))
+  # Page 4: UpSet plot (must print() for UpSetR to draw to device)
+  print(fig6_upset_plot)
   
   dev.off()
   cat("Comprehensive PDF document created!\n")
@@ -1009,7 +977,7 @@ cat("- Figure2_VennDiagrams.pdf/.png\n")
 cat("- Figure3_OverlapAnalysis.pdf/.png\n")
 cat("- Figure4_JaccardIndex.pdf/.png\n")
 cat("- Figure5_ComparisonHeatmap.pdf/.png\n")
-cat("- Figure6_UpSetPlot.pdf/.png\n")
+cat("- Figure6_UpSetPlot.svg\n")
 cat("- GeneOverlapAnalysis_Complete.pdf (all figures)\n")
 cat("- Analysis_Summary.txt\n")
 cat("==========================================\n")

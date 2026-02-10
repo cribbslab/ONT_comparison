@@ -1,9 +1,9 @@
 {
     "id": "649F887A",
-    "path": "~/Dropbox/MANUSCRIPTS/ONT directRNA/QC/NatureQC.Rmd",
+    "path": "~/Dropbox/Mac (3)/Documents/03_Programming/COMPUTATIONAL/ONT_comparison/QC/NatureQC.Rmd",
     "project_path": "NatureQC.Rmd",
     "type": "r_markdown",
-    "hash": "1155452569",
+    "hash": "4064808467",
     "contents": "",
     "dirty": false,
     "created": 1753721859150.0,
@@ -13,15 +13,15 @@
         "tempName": "Untitled1",
         "source_window_id": "",
         "Source": "Source",
-        "cursorPosition": "665,51",
-        "scrollLine": "0"
+        "cursorPosition": "445,47",
+        "scrollLine": "439"
     },
     "folds": "",
-    "lastKnownWriteTime": 1755287478,
+    "lastKnownWriteTime": 1770720471,
     "encoding": "UTF-8",
     "collab_server": "",
     "source_window": "",
-    "last_content_update": 1755287478626,
+    "last_content_update": 1770720471718,
     "read_only": false,
     "read_only_alternatives": []
 }

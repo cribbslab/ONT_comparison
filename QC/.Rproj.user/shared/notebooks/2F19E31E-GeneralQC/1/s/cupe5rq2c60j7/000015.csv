@@ -1,8 +1,0 @@
-"0",""
-"0",""
-"0","##For Stats"
-"0","np_ctrl=nanoplot[nanoplot$Condition==""control"",]"
-"0","np_il6=nanoplot[nanoplot$Condition==""IL6"",]"
-"0",""
-"0","#Median length"
-"0","t_test(np_ctrl, Median.read.length ~ Protocol)"

@@ -1,2 +1,0 @@
-"0","allreads=read.table(""allreadlengths.csv"", header=TRUE, sep="","")"
-"0","coldata=read.csv(""sampleinfo.csv"", header=TRUE, row.names=1)"

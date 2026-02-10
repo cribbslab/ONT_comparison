@@ -1,0 +1,88 @@
+"0",""
+"0","# =========================================="
+"0","# FIGURE 6: UpSet Plot (Enhanced and Debugged)"
+"0","# =========================================="
+"0",""
+"0","# Debug: Check gene sets first"
+"0","cat(""Debugging UpSet plot data...\n"")"
+"1","Debugging UpSet plot data...
+"
+"0","for(i in names(gene_sets)) {"
+"0","  cat(sprintf(""%s: %d genes\n"", i, length(gene_sets[[i]])))"
+"0","}"
+"1","cDNA_High: 9019 genes
+"
+"1","cDNA_Medium: 4012 genes
+"
+"1","cDNA_Low: 4417 genes
+"
+"1","dRNA_High: 12579 genes
+"
+"1","dRNA_Medium: 3188 genes
+"
+"1","dRNA_Low: 5130 genes
+"
+"0","# Create UpSet data with proper debugging"
+"0","all_genes <- unique(c(cdna_cpm$GENEID, drna_cpm$GENEID))"
+"0","cat(sprintf(""Total unique genes: %d\n"", length(all_genes)))"
+"1","Total unique genes: 22788
+"
+"0","upset_data <- data.frame(GENEID = all_genes, stringsAsFactors = FALSE)"
+"0",""
+"0","# Add membership columns with proper names and debugging"
+"0","upset_data$cDNA_High <- as.integer(upset_data$GENEID %in% gene_sets$cDNA_High)"
+"0","upset_data$cDNA_Medium <- as.integer(upset_data$GENEID %in% gene_sets$cDNA_Medium)"
+"0","upset_data$cDNA_Low <- as.integer(upset_data$GENEID %in% gene_sets$cDNA_Low)"
+"0","upset_data$dRNA_High <- as.integer(upset_data$GENEID %in% gene_sets$dRNA_High)"
+"0","upset_data$dRNA_Medium <- as.integer(upset_data$GENEID %in% gene_sets$dRNA_Medium)"
+"0","upset_data$dRNA_Low <- as.integer(upset_data$GENEID %in% gene_sets$dRNA_Low)"
+"0",""
+"0","# Debug: Check column sums"
+"0","cat(""Set sizes in UpSet data:\n"")"
+"1","Set sizes in UpSet data:
+"
+"0","for(col in c(""cDNA_High"", ""cDNA_Medium"", ""cDNA_Low"", ""dRNA_High"", ""dRNA_Medium"", ""dRNA_Low"")) {"
+"0","  cat(sprintf(""%s: %d\n"", col, sum(upset_data[[col]])))"
+"0","}"
+"1","cDNA_High: 9019
+"
+"1","cDNA_Medium: 4012
+"
+"1","cDNA_Low: 4417
+"
+"1","dRNA_High: 12579
+"
+"1","dRNA_Medium: 3188
+"
+"1","dRNA_Low: 5130
+"
+"0","# Remove GENEID column for UpSet (keep only binary columns)"
+"0","upset_binary <- upset_data[, c(""cDNA_High"", ""cDNA_Medium"", ""cDNA_Low"", ""dRNA_High"", ""dRNA_Medium"", ""dRNA_Low"")]"
+"0",""
+"0","# Check if we have any intersections"
+"0","total_rows_with_data <- sum(rowSums(upset_binary) > 0)"
+"0","cat(sprintf(""Rows with at least one set membership: %d\n"", total_rows_with_data))"
+"1","Rows with at least one set membership: 22788
+"
+"0","# Create UpSet plot with simpler approach"
+"0","cat(""Creating UpSet plot...\n"")"
+"1","Creating UpSet plot...
+"
+"0","upset_colors <- c(""#00A087"", ""#4DBBD5"", ""#F39B7F"", ""#00A087"", ""#4DBBD5"", ""#F39B7F"")"
+"0",""
+"0","# Create the UpSet plot object once (required for saving: must use print() on this object)"
+"0","fig6_upset_plot <- upset(upset_data,"
+"0","                        sets = c(""cDNA_High"", ""cDNA_Medium"", ""cDNA_Low"","
+"0","                                 ""dRNA_High"", ""dRNA_Medium"", ""dRNA_Low""),"
+"0","                        sets.bar.color = upset_colors,"
+"0","                        main.bar.color = ""black"","
+"0","                        matrix.color = ""black"","
+"0","                        order.by = ""freq"","
+"0","                        empty.intersections = ""on"","
+"0","                        text.scale = c(1.0, 0.9, 1.0, 0.9, 1.0, 0.9),"
+"0","                        mainbar.y.label = ""Intersection Size"","
+"0","                        sets.x.label = ""Set Size"","
+"0","                        mb.ratio = c(0.7, 0.3))"
+"0",""
+"0","# Display the plot (must print() so it also works when saving to file later)"
+"0","print(fig6_upset_plot)"

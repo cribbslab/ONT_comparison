@@ -1,4 +1,0 @@
-"0",""
-"0",""
-"0",""
-"0","stacked_length %>% mutate (Confidence=fct_relevel(conf, ""High"", ""Medium"", ""Low"")) %>% ggplot (aes(x=Protocol, y=`Number of Transcripts`, fill=Quartile))+geom_bar(position=""stack"", stat=""identity"")+facet_wrap(~Confidence)+scale_fill_manual(values=c(""darkred"", ""red"", ""pink""))"

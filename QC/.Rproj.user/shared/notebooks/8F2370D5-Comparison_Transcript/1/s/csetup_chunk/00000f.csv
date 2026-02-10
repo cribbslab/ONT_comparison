@@ -1,0 +1,124 @@
+"0","knitr::opts_chunk$set(echo = TRUE)"
+"0","library(ggvenn)"
+"0","library(dplyr)"
+"0","library(edgeR)"
+"0","library(stats)"
+"0","library(tidyr)"
+"0","library(forcats)"
+"0","library(ggpubr)"
+"0","library(biomaRt)"
+"0","library(AnnotationDbi)"
+"2","Loading required package: stats4
+"
+"2","Loading required package: BiocGenerics
+"
+"2","
+Attaching package: ‘BiocGenerics’
+
+"
+"2","The following object is masked from ‘package:limma’:
+
+    plotMA
+
+"
+"2","The following objects are masked from ‘package:dplyr’:
+
+    combine, intersect, setdiff, union
+
+"
+"2","The following objects are masked from ‘package:stats’:
+
+    IQR, mad, sd, var, xtabs
+
+"
+"2","The following objects are masked from ‘package:base’:
+
+    anyDuplicated, aperm, append, as.data.frame, basename, cbind, colnames, dirname, do.call, duplicated, eval, evalq, Filter, Find, get,
+    grep, grepl, intersect, is.unsorted, lapply, Map, mapply, match, mget, order, paste, pmax, pmax.int, pmin, pmin.int, Position, rank,
+    rbind, Reduce, rownames, sapply, saveRDS, setdiff, table, tapply, union, unique, unsplit, which.max, which.min
+
+"
+"2","Loading required package: Biobase
+"
+"2","Welcome to Bioconductor
+
+    Vignettes contain introductory material; view with 'browseVignettes()'. To cite Bioconductor, see 'citation(""Biobase"")', and for packages
+    'citation(""pkgname"")'.
+
+"
+"2","Loading required package: IRanges
+"
+"2","Loading required package: S4Vectors
+"
+"2","
+Attaching package: ‘S4Vectors’
+
+"
+"2","The following object is masked from ‘package:tidyr’:
+
+    expand
+
+"
+"2","The following objects are masked from ‘package:dplyr’:
+
+    first, rename
+
+"
+"2","The following object is masked from ‘package:utils’:
+
+    findMatches
+
+"
+"2","The following objects are masked from ‘package:base’:
+
+    expand.grid, I, unname
+
+"
+"2","
+Attaching package: ‘IRanges’
+
+"
+"2","The following objects are masked from ‘package:dplyr’:
+
+    collapse, desc, slice
+
+"
+"2","
+Attaching package: ‘AnnotationDbi’
+
+"
+"2","The following object is masked _by_ ‘.GlobalEnv’:
+
+    select
+
+"
+"2","The following object is masked from ‘package:dplyr’:
+
+    select
+
+"
+"0","library(tidyverse)"
+"2","Warning: package ‘readr’ was built under R version 4.4.3"
+"2","── [1mAttaching core tidyverse packages[22m ─────────────────────────────────────────────────────────────────────────────────────────────────────── tidyverse 2.0.0 ──
+[32m✔[39m [34mlubridate[39m 1.9.4     [32m✔[39m [34mstringr  [39m 1.6.0
+[32m✔[39m [34mpurrr    [39m 1.2.0     [32m✔[39m [34mtibble   [39m 3.3.0
+[32m✔[39m [34mreadr    [39m 2.1.6     "
+"2","── [1mConflicts[22m ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── tidyverse_conflicts() ──
+[31m✖[39m [34mlubridate[39m::[32m%within%()[39m    masks [34mIRanges[39m::%within%()
+[31m✖[39m [34mreadr[39m::[32mcol_factor()[39m      masks [34mscales[39m::col_factor()
+[31m✖[39m [34mIRanges[39m::[32mcollapse()[39m      masks [34mdplyr[39m::collapse()
+[31m✖[39m [34mBiobase[39m::[32mcombine()[39m       masks [34mBiocGenerics[39m::combine(), [34mdplyr[39m::combine()
+[31m✖[39m [34mIRanges[39m::[32mdesc()[39m          masks [34mdplyr[39m::desc()
+[31m✖[39m [34mpurrr[39m::[32mdiscard()[39m         masks [34mscales[39m::discard()
+[31m✖[39m [34mS4Vectors[39m::[32mexpand()[39m      masks [34mtidyr[39m::expand()
+[31m✖[39m [34mdplyr[39m::[32mfilter()[39m          masks [34mstats[39m::filter()
+[31m✖[39m [34mS4Vectors[39m::[32mfirst()[39m       masks [34mdplyr[39m::first()
+[31m✖[39m [34mdplyr[39m::[32mlag()[39m             masks [34mstats[39m::lag()
+[31m✖[39m [34mBiocGenerics[39m::[32mPosition()[39m masks [34mggplot2[39m::Position(), [34mbase[39m::Position()
+[31m✖[39m [34mpurrr[39m::[32mreduce()[39m          masks [34mIRanges[39m::reduce()
+[31m✖[39m [34mS4Vectors[39m::[32mrename()[39m      masks [34mdplyr[39m::rename()
+[31m✖[39m [34mlubridate[39m::[32msecond()[39m      masks [34mS4Vectors[39m::second()
+[31m✖[39m [34mlubridate[39m::[32msecond<-()[39m    masks [34mS4Vectors[39m::second<-()
+[31m✖[39m [34mAnnotationDbi[39m::[32mselect()[39m  masks [34mbiomaRt[39m::select(), [34mdplyr[39m::select()
+[31m✖[39m [34mIRanges[39m::[32mslice()[39m         masks [34mdplyr[39m::slice()
+[36mℹ[39m Use the ]8;;http://conflicted.r-lib.org/conflicted package]8;; to force all conflicts to become errors"

@@ -1,0 +1,9 @@
+"0",""
+"0","# =========================================="
+"0","# FIGURE 2: NanoPlot Quality Metrics"
+"0","# =========================================="
+"0",""
+"0","nanoplot <- read.csv(""nanoplot_direct2sub.csv"", header = TRUE, row.names = 1)"
+"2","Warning: cannot open file 'nanoplot_direct2sub.csv': No such file or directory"
+"2","Error in file(file, ""rt"") : cannot open the connection
+"

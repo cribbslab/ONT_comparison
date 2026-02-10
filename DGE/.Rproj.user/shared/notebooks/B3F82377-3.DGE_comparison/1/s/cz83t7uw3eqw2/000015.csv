@@ -1,3 +1,0 @@
-"0",""
-"0","#Pull out DGE significance values"
-"0","cdna_dge[cdna_dge$hgnc %in% genes_hgnc,6:7]"

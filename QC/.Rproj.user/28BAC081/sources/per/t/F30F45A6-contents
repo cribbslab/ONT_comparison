@@ -23,16 +23,16 @@ library(tidyverse)
 
 #Read in matrices
 #All reads
-cdna_tx=read.table("./bambu_counts/cdna2_SKMM2_counts_transcript.txt", header=T, sep="\t")
+cdna_tx=read.table("./bambu_counts/cdnar104M_counts_transcript.txt", header=T, sep="\t")
 drna_tx=read.table("./bambu_counts/drnasub_SKMM2_counts_transcript.txt", header=T)
 
 #Full-length reads
 
-cdna_fl=read.table("./bambu_counts/cdna2_SKMM2_fullLengthCounts_transcript.txt", header=T, sep="\t")
+cdna_fl=read.table("./bambu_counts/cdnar104M_fullLengthCounts_transcript.txt", header=T, sep="\t")
 drna_fl=read.table("./bambu_counts/drnasub_SKMM2_fullLengthCounts_transcript.txt", header=T, sep="\t")
 
 #Unique Reads
-cdna_uni=read.table("./bambu_counts/cdna2_SKMM2_uniqueCounts_transcript.txt", header=T, sep="\t")
+cdna_uni=read.table("./bambu_counts/cdnar104M_uniqueCounts_transcript.txt", header=T, sep="\t")
 drna_uni=read.table("./bambu_counts/drnasub_SKMM2_uniqueCounts_transcript.txt", header=T, sep="\t")
 
 

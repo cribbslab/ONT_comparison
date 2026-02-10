@@ -1,3 +1,0 @@
-"0",""
-"0","#Median quality"
-"0","ggplot(np_melt[np_melt$variable==""Median.read.quality"",], aes(x=Condition, y=as.numeric(value), fill=Protocol, group=Protocol)) + stat_summary(fun=""mean"", geom=""bar"", aes(fill=Protocol), position=position_dodge(0.95)) + stat_summary(geom=""errorbar"", colour=""black"", position=position_dodge(0.95))+facet_wrap(~variable) + ylab(""Median Read Quality"")+scale_y_continuous(limits=c(0,20))+ scale_fill_manual(values=c(""navy"", ""turquoise3""))"

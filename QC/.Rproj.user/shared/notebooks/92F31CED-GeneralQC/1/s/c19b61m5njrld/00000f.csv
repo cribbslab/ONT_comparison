@@ -1,0 +1,4 @@
+"0","allreads=read.table(""allreadlengths.csv"", header=TRUE, sep="","")"
+"2","Warning: cannot open file 'allreadlengths.csv': No such file or directory"
+"2","Error in file(file, ""rt"") : cannot open the connection
+"

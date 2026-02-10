@@ -1,16 +1,40 @@
 GENE OVERLAP ANALYSIS SUMMARY
 ============================
-Analysis Date: 2025-08-15 
+Analysis Date: 2026-02-09 
 Author: Rebecca L
 
 DATASET OVERVIEW:
-PCR-cDNA genes detected: 19910
-Direct RNA genes detected: 20897
-Total unique genes: 24261
+-----------------
+PCR-cDNA genes detected: 17448 
+Direct RNA genes detected: 20897 
+Total unique genes: 22788 
 
-CONFIDENCE BREAKDOWN:
+CONFIDENCE LEVEL BREAKDOWN:
+---------------------------
+PCR-cDNA :
+  High: 9019 genes (51.7%)
+  Medium: 4012 genes (23%)
+  Low: 4417 genes (25.3%)
 
-KEY FINDINGS:
-- High confidence: Jaccard index = 0.675, 8795 genes overlap (67.5%)
-- Medium confidence: Jaccard index = 0.115, 763 genes overlap (11.5%)
-- Low confidence: Jaccard index = 0.142, 1446 genes overlap (14.2%)
+Direct RNA :
+  High: 12579 genes (60.2%)
+  Medium: 3188 genes (15.3%)
+  Low: 5130 genes (24.5%)
+
+OVERLAP STATISTICS:
+-------------------
+High confidence: Jaccard=0.622, Overlap=8283 genes (62.2%)
+Medium confidence: Jaccard=0.096, Overlap=629 genes (9.6%)
+Low confidence: Jaccard=0.127, Overlap=1073 genes (12.7%)
+
+FIGURES GENERATED:
+------------------
+Figure 1: Gene detection by confidence level (stacked bar chart)
+Figure 2: Venn diagrams by confidence level (3-panel)
+Figure 3: Quantitative overlap analysis (stacked bar chart)
+Figure 4: Jaccard similarity index (bar chart)
+Figure 5: Protocol comparison heatmap
+Figure 6: UpSet plot showing all intersections
+
+All figures saved as both PDF and PNG formats at 300 DPI
+Dimensions: Single column (85mm) and double column (170mm)
