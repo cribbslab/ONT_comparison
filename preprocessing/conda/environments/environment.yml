@@ -1,0 +1,23 @@
+name: bulkRNAlongread_pipeline
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python=3.8
+  - pip
+  - numpy
+  - pyyaml
+  - cgatcore
+  - ruffus
+  - biokit
+  - minimap2
+  - samtools
+  - seqtk
+  - pychopper
+  - nanoplot
+  - rseqc
+  - bedtools
+  - multiqc
+  - r-base=4.4
+  - bioconductor-bambu
