@@ -1,0 +1,93 @@
+Rank	Probe	Weight	Symbol	GO_description
+1	202728_s_at	-0.1105	LTBP1	negative regulation of TGFbeta receptor signaling
+2	239054_at	-0.1088	SFMBT1	regulation of transcription
+3	208942_s_at	-0.0997	SEC62	cotranslational protein targeting to membrane
+4	208747_s_at	-0.0874	C1S	proteolysis
+5	202542_s_at	0.0870	AIMP1	negative regulation of endothelial cell proliferation
+6	214482_at	0.0861	ZBTB25	transcription
+7	228416_at	-0.0778	ACVR2A	transmembrane receptor protein serine/threonine kinase signaling
+8	217728_at	0.0773	S100A6	signal transduction
+9	215177_s_at	-0.0768	ITGA6	cell-substrate junction assembly
+10	225601_at	0.0750	HMGB3	multicellular organismal development
+11	207618_s_at	0.0746	BCS1L	mitochondrion organization
+12	231989_s_at	0.0730	LOC100271836	---
+13	202884_s_at	0.0714	PPP2R1B	control of cell growth and division
+14	231738_at	0.0686	PCDHB7	calcium-dependent cell-cell adhesion
+15	238116_at	0.0661	DYNLRB2	microtubule-based movement
+16	226218_at	-0.0644	IL7R	regulation of DNA recombination
+17	202842_s_at	-0.0626	DNAJB9	protein folding
+18	208732_at	-0.0618	RAB2A	ER to Golgi vesicle-mediated transport
+19	204379_s_at	0.0594	FGFR3	MAPKKK cascade
+20	242180_at	-0.0585	TSPAN16	cellular activation and adhesion
+21	216473_x_at	-0.0576	DUX4	regulation of transcription, DNA-dependent
+22	209683_at	-0.0561	FAM49A	---
+23	219550_at	0.0559	ROBO3	axon guidance
+24	223811_s_at	0.0556	SUN1 / GET4	cytoskeletal anchoring at nuclear membrane
+25	202813_at	0.0548	TARBP1	regulation of transcription from RNA polymerase II promoter
+26	212282_at	0.0530	TMEM97	cholesterol homeostasis
+27	238780_s_at	-0.0529	EST/ BX647543	---
+28	M97935_MA_at2	0.0525	STAT1	transcription from RNA polymerase II promoter
+29	221041_s_at	-0.0520	SLC17A5	anion transport
+30	224009_x_at	-0.0520	DHRS9	androgen metabolic process
+31	214612_x_at	0.0496	MAGEA6	---
+32	208232_x_at	-0.0493	---	---
+33	238662_at	0.0490	ATPBD4	---
+34	206204_at	0.0477	GRB14	signal transduction
+35	233437_at	0.0446	GABRA4	transport
+36	200875_s_at	0.0437	NOP56	rRNA processing
+37	38158_at	0.0423	ESPL1	apoptosis
+38	217548_at	-0.0423	C15orf38	---
+39	220351_at	0.0420	CCRL1	chemotaxis
+40	213002_at	-0.0418	MARCKS	actin filament crosslinking
+41	243018_at	0.0407	EST/BE568408	---
+42	221755_at	0.0396	EHBP1L1	---
+43	208667_s_at	-0.0390	ST13	protein folding
+44	212055_at	0.0384	C18orf10	cytoskeleton
+45	201292_at	-0.0372	TOP2A	DNA ligation
+46	201102_s_at	0.0349	PFKL	fructose 6-phosphate metabolic process
+47	214150_x_at	-0.0349	ATP6V0E1	proton transport
+48	226742_at	-0.0345	SAR1B	transport
+49	215181_at	-0.0342	CDH22	cell adhesion
+50	208904_s_at	-0.0334	RPS28	rRNA processing
+51	230034_x_at	-0.0330	MRPL41	translation
+52	200933_x_at	-0.0323	RPS4X	translation
+53	226217_at	-0.0319	SLC30A7	transport
+54	211963_s_at	0.0303	ARPC5	cellular component movement
+55	222713_s_at	0.0278	FANCF	DNA repair
+56	209026_x_at	0.0255	TUBB	cellular component movement
+57	201398_s_at	-0.0254	TRAM1	cotranslational protein targeting to membrane
+58	217732_s_at	-0.0252	ITM2B	nervous system development
+59	202107_s_at	0.0225	MCM2	DNA replication
+60	211714_x_at	0.0221	TUBB	cellular component movement
+61	200701_at	-0.0210	NPC2	phospholipid transport
+62	221606_s_at	0.0208	HMGN5	regulation of transcription, DNA-dependent
+63	222680_s_at	0.0205	DTL	protein polyubiquitination
+64	221826_at	0.0200	ANGEL2	---
+65	233399_x_at	-0.0184	ZNF252	transcription
+66	218662_s_at	-0.0176	NCAPG	mitotic chromosome condensation
+67	210334_x_at	0.0175	BIRC5	G2/M transition of mitotic cell cycle
+68	201307_at	0.0165	SEPT11	protein heterooligomerization
+69	212788_x_at	-0.0164	FTL	cellular iron ion homeostasis
+70	200775_s_at	0.0163	HNRNPK	RNA processing
+71	222154_s_at	0.0154	SPATS2L	---
+72	225366_at	0.0140	PGM2	glucose 1-phosphate metabolic process
+73	202322_s_at	0.0129	GGPS1	isoprenoid metabolic process
+74	221677_s_at	0.0126	DONSON	multicellular organismal development
+75	218355_at	0.0116	KIF4A	anterograde axon cargo transport
+76	208967_s_at	0.0113	AK2	nucleic acid metabolic process
+77	213007_at	-0.0106	FANCI	DNA repair
+78	219510_at	-0.0097	POLQ	DNA repair
+79	231210_at	0.0093	C11orf85	---
+80	201930_at	-0.0090	MCM6	DNA replication
+81	205046_at	0.0087	CENPE	mitotic metaphase
+82	223381_at	-0.0070	NUF2	chromosome segregation
+83	201795_at	0.0067	LBR	nucleus structure
+84	213350_at	0.0056	RPS11	translation
+85	202553_s_at	0.0054	SYF2	mRNA processing
+86	201555_at	-0.0052	MCM3	DNA-dependent DNA replication initiation
+87	204026_s_at	0.0046	ZWINT	mitotic sister chromatid segregation
+88	217824_at	-0.0041	NCUBE1	post-translational protein modification
+89	218365_s_at	0.0035	DARS2	translation
+90	217852_s_at	0.0008	ARL8B	chromosome segregation
+91	202532_s_at	-0.0006	DHFR	tetrahydrofolate metabolic process
+92	203145_at	-0.0002	SPAG5	cell cycle

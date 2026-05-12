@@ -1,0 +1,1707 @@
+---
+title: "fusions"
+output: html_document
+date: "2025-09-04"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# my_lib_path <- c("/ceph/project/otmc/asriniva/R/x86_64-pc-linux-gnu-library/4.5", "/ceph/project/otmc/asriniva/R/x86_64-pc-linux-gnu-library/4.4")
+# .libPaths(c(my_lib_path, .libPaths()))
+# Sys.setenv("R_LIBS_USER" = my_lib_path[1])  # necessary for RStudio
+
+my_lib_path <- c("/ceph/project/otmc/asriniva/R/x86_64-pc-linux-gnu-library/4.5", "/ceph/project/otmc/asriniva/R/x86_64-pc-linux-gnu-library/4.4")
+.libPaths(c(my_lib_path, .libPaths()))
+
+my_lib_path <- c("/ceph/project/otmc/asriniva/R/x86_64-pc-linux-gnu-library/4.5")
+
+if (! my_lib_path[1] %in% .libPaths()) {
+  .libPaths(c(my_lib_path[1], .libPaths()))
+}
+
+Sys.setenv("R_LIBS_USER" = my_lib_path[1])  # necessary for RStudio
+
+Sys.setenv("R_LIBS_USER" = .libPaths()[5])  # necessary for RStudio
+
+.libPaths()
+
+
+library(tidyverse)
+library(purrr)
+library(data.table)
+library(AnnotationHub)
+library(biomaRt)
+#library(AHCytoBands)
+librarian::shelf("vcfR")
+library(patchwork)
+library(ggpubr)
+#library(EnsDb.Hsapiens.v86)
+library(ensembldb)
+library(TxDb.Hsapiens.UCSC.hg38.knownGene)
+library(AnnotationDbi)
+library(org.Hs.eg.db)
+library(biomaRt)
+library(GenomicFeatures)
+library(tximport)
+library(GenomicRanges)
+library(ggVennDiagram)
+library(RColorBrewer)
+library(chimeraviz)
+library(ComplexUpset)
+library(conflicted)
+library(magrittr)
+
+
+
+
+conflict_prefer("filter", "dplyr")  # Prefer dplyr's filter
+conflict_prefer("mutate", "dplyr")  # Prefer dplyr's filter
+conflict_prefer("select", "dplyr")  # Prefer dplyr's filter
+conflicts_prefer(dplyr::slice)
+conflicted::conflicts_prefer(base::setdiff)
+conflicts_prefer(dplyr::rename)
+conflicts_prefer(ComplexUpset::upset)
+conflicts_prefer(dplyr::desc)
+conflicts_prefer(base::intersect)
+conflicts_prefer(base::union)
+
+```
+
+
+```{r}
+## Load the annotation resource.
+ah <- AnnotationHub()
+
+## Query for available H.Sapiens EnsDb databases
+#ahDb <- query(ah, pattern = c("Homo Sapiens", "EnsDb"))
+
+edbv111 <- ah[["AH116291"]]
+edbv105 <- ah[["AH98047"]]
+edbv104 <- ah[["AH95744"]]
+edbv102 <- ah[["AH89180"]]
+edbv87 <- ah[["AH53211"]]
+edbv88 <- ah[["AH53715"]]
+edbv89 <- ah[["AH56681"]]
+edbv90 <- ah[["AH57757"]]
+edbv79 <- ah[["AH73986"]]
+edbv97 <- ah[["AH73881"]]
+
+gencodev32 <- ah[["AH75192"]]
+gencode_genomicstates <- ah[["AH75193"]]
+
+query(ah, c("EnsDb", "HSapiens"))
+mart <-  useEnsembl(biomart = "genes", dataset = "hsapiens_gene_ensembl", version = 104)
+orgs <- subset(ah, ah$rdataclass == "OrgDb")
+orgdb <- query(orgs, "Homo sapiens")[[1]]
+
+
+gencode38_gtf <-  "/ceph/project/otmc/asriniva/index/gencode.v38.annotation.gtf"
+gencode38 <- rtracklayer::import(gtf_file) %>% as.data.frame() %>% 
+  select(gene_id, gene_name, strand) %>% distinct() %>%
+  mutate(gene_id = str_remove_all(gene_id, "\\..*"))
+```
+
+```{r paths}
+samples <- c(
+  "SKMM2control1_gene.sorted",
+  "SKMM2control2_gene.sorted",
+  "SKMM2control3_gene.sorted",
+  "SKMM2IL61_gene.sorted",
+  "SKMM2IL62_gene.sorted",
+  "SKMM2IL63_gene.sorted",
+  "sub_SKMM2_drna_control1_gene.sorted",
+  "sub_SKMM2_drna_control2_gene.sorted",
+  "sub_SKMM2_drna_control3_gene.sorted",
+  "sub_SKMM2_drna_IL61_gene.sorted",
+  "sub_SKMM2_drna_IL62_gene.sorted",
+  "sub_SKMM2_drna_IL63_gene.sorted"
+)
+
+samples2 <- samples %>% 
+  str_remove_all("_gene.sorted") %>%
+  str_remove_all("sub_") %>%
+  str_replace_all("2c", "2_cDNA_c") %>%
+  str_replace_all("2I", "2_cDNA_I") %>%
+  str_replace_all("drna", "dRNA") %>%
+  str_replace_all("A_c", "A_C")
+
+fusions_dir <- "/ceph/project/otmc/asriniva/long_read/rna/samples/drna_analysis/fusions/"
+
+jaffal <- file.path(fusions_dir, "jaffal")
+ctat_lr <- file.path(fusions_dir, "ctat_lr")
+fusionseeker <- file.path(fusions_dir, "fusionseeker")
+longgf <- file.path(fusions_dir, "longgf")
+flair_fusion <- file.path(fusions_dir, "flair_fusion")
+
+## res files LR ####
+jaffal_results_csv <- list.files(path=jaffal, pattern = "*filtered.jaffal_results.csv", recursive = T, full.names = T)
+names(jaffal_results_csv) <- samples2
+
+ctat_lr_csv <- list.files(pattern = "fusion_predictions.tsv", path = ctat_lr, recursive = TRUE, full.names = TRUE) %>% str_subset("v1.1.0")
+names(ctat_lr_csv) <- samples2
+
+fusionseeker_csv <- list.files(pattern = "confident_genefusion.txt", path = fusionseeker, recursive = TRUE, full.names = TRUE)  
+names(fusionseeker_csv) <- samples2
+
+flair_fusion_csv <- list.files(pattern = "*fastqFusions.tsv", path = flair_fusion, recursive = TRUE, full.names = TRUE)  
+names(flair_fusion_csv) <- samples2
+
+longgf_results_csv <- list.files(pattern = "results.tsv", path = longgf, recursive = TRUE, full.names = TRUE) 
+names(longgf_results_csv) <- samples2
+
+```
+
+
+```{r fusion_genes}
+
+##### read in jaffa results ####
+jaffal_table <- list()
+
+for (file in names(jaffal_results_csv)) {
+  jaffal_table[[file]] <- fread(jaffal_results_csv[file]) %>%
+    mutate(sample = file, .before =1) %>%
+    rowwise() %>%
+    mutate(cell_line = str_sub(file, 7, -2), replicate = str_sub(file, -1))
+}
+
+jaffal_fusion_full <- bind_rows(jaffal_table) %>% mutate(method = "LR_JAFFAL")
+
+### ctat lr ####
+ctat_lr_table <- list()
+
+for (file in names(ctat_lr_csv)) {
+  ctat_lr_table[[file]] <- fread(ctat_lr_csv[file]) %>%
+    mutate(sample = file, .before = 1) %>%
+    rowwise() %>%
+    mutate(cell_line = str_sub(file, 7, -2),
+           replicate = str_sub(file, -1))
+}
+
+ctat_lr_fusion_full <- bind_rows(ctat_lr_table) %>% mutate(method = "LR_CTAT")
+
+
+### Fusionseeker results ####
+fusionseeker_table <- list()
+
+for (file in names(fusionseeker_csv)) {
+  fusionseeker_table[[file]] <- fread(fusionseeker_csv[file]) %>%
+    mutate(sample = file, .before = 1) %>%
+    rowwise() %>%
+    mutate(cell_line = str_sub(file, 7, -2),
+           replicate = str_sub(file, -1))
+}
+
+fusionseeker_full <- bind_rows(fusionseeker_table) %>% mutate(method = "LR_Fusionseeker")
+
+
+### flair Fusion results ####
+flair_fusion_table <- list()
+
+for (file in names(flair_fusion_csv)) {
+  flair_fusion_table[[file]] <- fread(flair_fusion_csv[file]) %>%
+    mutate(sample = file, .before = 1) %>%
+    rowwise() %>%
+    mutate(cell_line = str_sub(file, 7, -2),
+           replicate = str_sub(file, -1))
+}
+
+flair_fusion_full <- bind_rows(flair_fusion_table) %>% mutate(method = "LR_flair_fusion")
+
+
+#### longgf ####
+longgf_table <- list()
+
+for (file in names(longgf_results_csv)) {
+  longgf_table[[file]] <- fread(longgf_results_csv[file], header = FALSE) %>%
+    mutate(sample = file, .before = 1) %>%
+    rowwise() %>%
+    mutate(cell_line = str_sub(file, 7, -2),
+           replicate = str_sub(file, -1))
+}
+
+longgf_fusion_full <-
+  bind_rows(longgf_table) %>% mutate(method = "LR_LONGGF") %>%
+  select(-V1) %>%
+  separate(
+    V2,
+    into = c("fusion genes", "numLR", "breakpoint1", "breakpoint2"),
+    sep = " "
+  ) %>%
+  separate(`fusion genes`,
+           into = c("gene1", "gene2"), sep = ":",
+           remove = FALSE) %>%
+  separate(breakpoint1, c("chrom1", "base1"), sep = ":", remove = FALSE) %>%
+  separate(breakpoint2, c("chrom2", "base2"), sep = ":", remove = FALSE) %>%
+  left_join(gencode38, by = c("gene1" = "gene_name")) %>%
+  mutate(ensembl_id1 = ifelse(
+    str_detect(gene1, "^ENSG0"), 
+    gene1,                 # keep original if it's already an Ensembl ID
+    gene_id                # otherwise use mapped Ensembl ID
+  )) %>%
+  select(-gene_id)  %>%       # optional: drop the lookup column
+  left_join(gencode38, by = c("gene2" = "gene_name")) %>%
+  mutate(ensembl_id2 = ifelse(
+    str_detect(gene2, "^ENSG0"), 
+    gene2,                 # keep original if it's already an Ensembl ID
+    gene_id                # otherwise use mapped Ensembl ID
+  )) %>%
+  select(-gene_id) %>%         # optional: drop the lookup column %>%
+  mutate(
+    genename1 =  ifelse(is.na(ensembl_id1), gene1, AnnotationDbi::mapIds(edbv104,
+                  keys=ensembl_id1,
+                  column="GENENAME",
+                  keytype="GENEID",
+                  multiVals="first"))
+   ) %>%
+  mutate(
+    genename2 =  ifelse(is.na(ensembl_id2), gene2, AnnotationDbi::mapIds(edbv104,
+                  keys=ensembl_id2,
+                  column="GENENAME",
+                  keytype="GENEID",
+                  multiVals="first")
+  )) %>%
+   mutate(
+    
+    strand1 =  AnnotationDbi::mapIds(edbv105,
+                  keys=ensembl_id1,
+                  column="SEQSTRAND",
+                  keytype="GENEID",
+                  multiVals="first")
+  ) %>%
+  mutate(
+    
+    strand2 =  AnnotationDbi::mapIds(edbv111,
+                  keys=ensembl_id2,
+                  column="SEQSTRAND",
+                  keytype="GENEID",
+                  multiVals="first")
+  ) %>%
+  mutate(breakpoint1 = paste(chrom1, base1, base1, strand1, sep = ":")) %>% 
+  mutate(breakpoint1 = paste(chrom2, base2, base2, strand2, sep = ":")) %>%
+  mutate(strand1 = ifelse(strand1 == 1, "+", 
+                         ifelse(strand1 == -1, "-", NA))) %>%
+  mutate(strand2 = ifelse(strand2 == 1, "+", 
+                         ifelse(strand2 == -1, "-", NA))) %>%
+  mutate(numLR = as.numeric(numLR),
+         base1 = as.numeric(base1),
+        base2 = as.numeric(base2)
+         )
+```
+
+
+
+
+```{r jaffal}
+metafusion_jaffal <-
+  jaffal_fusion_full %>%
+  #mutate(replicate = ifelse(is.na(replicate), 1, replicate)) %>%
+  #mutate(sample = paste(sample, replicate, sep="_")) %>% ### addon
+  mutate(library = "RNA", 
+         sample_type = "Tumour", 
+         disease = "MM", 
+         chrom1 = str_replace(chrom1, "chr", ""),
+         chrom2 = str_replace(chrom2, "chr", ""),
+         sample = str_replace(sample, ".fastq", "")) %>%
+  mutate(base1 = as.numeric(base1), base2=as.numeric(base2)) %>%
+  separate(`fusion genes`, into = c("t_gene1", "t_gene2"), sep = ":", remove = FALSE) %>%
+  mutate(t_area1 = NA, t_area2 = NA) %>%
+  select(fid = `fusion genes`,
+    chr1 = chrom1,
+         pos1 = base1,
+         strand1,
+         chr2 = chrom2,
+         pos2=base2,
+         strand2,
+         library,
+         sample_name = sample,
+         sample_type,
+         disease,
+         tool = method,
+         split_cnt = `spanning reads`,
+         span_cnt = `spanning pairs`,
+         t_gene1,
+         t_area1,
+         t_gene2,
+         t_area2)  %>%
+  mutate(chrom1_region = paste(chr1, pos1, pos1, parse_number(paste0(strand1, 1)), sep=":")) %>%
+  mutate(chrom2_region = paste(chr2, pos2, pos2, parse_number(paste0(strand2, 1)), sep=":")) %>%
+   filter(! (str_detect(t_gene1, "^(IGH|IGK|IGL|IGJ)") &  
+      str_detect(t_gene2, "^(IGH|IGK|IGL|IGJ)"))) %>%
+  mutate(
+    
+    ensemble_id1 =  AnnotationDbi::mapIds(edbv79,
+                  keys=t_gene1,
+                  column="GENEID",
+                  keytype="GENENAME",
+                  multiVals="first")
+   ) %>%
+  mutate(
+    
+    ensemble_id2 =  AnnotationDbi::mapIds(edbv79,
+                  keys=t_gene2,
+                  column="GENEID",
+                  keytype="GENENAME",
+                  multiVals="first")
+  )
+
+
+```
+
+
+```{r ctat}
+metafusion_ctat <-
+  ctat_lr_fusion_full %>%
+  #mutate(replicate = ifelse(is.na(replicate), 1, replicate)) %>%
+  #mutate(sample = paste(sample, replicate, sep="_")) %>% ### addon
+  separate(LeftBreakpoint, into = c("chrom1", "base1", "strand1"), sep = ":", remove = FALSE) %>%
+  separate(RightBreakpoint, into = c("chrom2", "base2", "strand2"), sep = ":", remove = FALSE) %>%
+  mutate(`fusion genes` = str_replace(`#FusionName`, "--", ":"), .after=1) %>% mutate(
+         library = "RNA", 
+         sample_type = "Tumour", 
+         disease = "MM", 
+         chrom1 = str_replace(chrom1, "chr", ""),
+         chrom2 = str_replace(chrom2, "chr", ""),
+         sample = str_replace(sample, ".fastq", "")) %>%
+  mutate(base1 = as.numeric(base1), base2=as.numeric(base2)) %>%
+  mutate(t_area1 = NA, t_area2 = NA) %>%
+  select(fid = `fusion genes`,
+         chr1 = chrom1,
+         pos1 = base1,
+         strand1,
+         chr2 = chrom2,
+         pos2=base2,
+         strand2,
+         library,
+         sample_name = sample,
+         sample_type,
+         disease,
+         tool = method,
+         split_cnt = num_LR,
+         t_gene1 = LeftGene,
+         t_area1,
+         t_gene2 = RightGene,
+         t_area2)  %>%
+  mutate(chrom1_region = paste(chr1, pos1, pos1, parse_number(paste0(strand1, 1)), sep=":")) %>%
+  mutate(chrom2_region = paste(chr2, pos2, pos2, parse_number(paste0(strand2, 1)), sep=":")) %>%
+   filter(! (str_detect(t_gene1, "^(IGH|IGK|IGL|IGJ)") &  
+      str_detect(t_gene2, "^(IGH|IGK|IGL|IGJ)"))) %>%
+  filter(chr1 != "chrM", chr2 != "chrM", ! (chr1 == "chr14" & chr2 == "chr14")) %>%
+  mutate(t_gene1 = ifelse((str_detect(t_gene1, "^IGL") & chr1 == 22 & !str_detect(t_gene1, "^IGLL")), "IGLC1", t_gene1)) %>%
+  mutate(t_gene2 = ifelse((str_detect(t_gene2, "^IGL*") & chr2 == 22 & !str_detect(t_gene2, "^IGLL*")), "IGLC1", t_gene2)) %>%
+  mutate(t_gene1 = ifelse((str_detect(t_gene1, "^IGH") & chr1 == 14), "IGHG1", t_gene1)) %>%
+  mutate(t_gene2 = ifelse((str_detect(t_gene2, "^IGH*") & chr2 == 14), "IGHG1", t_gene2)) %>%
+  mutate(t_gene1 = ifelse((str_detect(t_gene1, "^IGK") & chr1 == 2), "IGKC", t_gene1)) %>%
+  mutate(t_gene2 = ifelse((str_detect(t_gene2, "^IGK*") & chr2 == 2), "IGKC", t_gene2)) %>%
+  
+  mutate(
+    
+    ensemble_id1 =  AnnotationDbi::mapIds(edbv79,
+                  keys=t_gene1,
+                  column="GENEID",
+                  keytype="GENENAME",
+                  multiVals="first")
+   ) %>%
+  mutate(
+    
+    ensemble_id2 =  AnnotationDbi::mapIds(edbv79,
+                  keys=t_gene2,
+                  column="GENEID",
+                  keytype="GENENAME",
+                  multiVals="first")
+  )
+
+
+```
+
+
+```{r fusionseeker}
+metafusion_fusionseeker <-
+  fusionseeker_full %>%
+  #mutate(replicate = ifelse(is.na(replicate), 1, replicate)) %>%
+  #mutate(sample = paste(sample, replicate, sep="_")) %>% ### addon
+  mutate(`fusion genes` = paste(Gene1, Gene2, sep = ":"), .after=1) %>%
+   mutate(library = "RNA", 
+         sample_type = "Tumour", 
+         disease = "MM", 
+         chrom1 = str_replace(Chrom1, "chr", ""),
+         chrom2 = str_replace(Chrom2, "chr", ""),
+         sample = str_replace(sample, ".fastq", "")) %>%
+  mutate(base1 = as.numeric(Breakpoint1), base2=as.numeric(Breakpoint2)) %>%
+  mutate(t_area1 = NA, t_area2 = NA, strand1=NA, strand2=NA) %>%
+  select(fid =`fusion genes`, 
+         chr1 = chrom1,
+         pos1 = base1,
+         strand1,
+         chr2 = chrom2,
+         pos2=base2,
+         strand2,
+         library,
+         sample_name = sample,
+         sample_type,
+         disease,
+         tool = method,
+         split_cnt = NumSupp,
+         t_gene1 = Gene1,
+         t_area1,
+         t_gene2 = Gene2,
+         t_area2)  %>%
+  mutate(chrom1_region = paste(chr1, pos1, pos1, sep=":")) %>%
+  mutate(chrom2_region = paste(chr2, pos2, pos2, sep=":")) %>%
+ filter(! (str_detect(t_gene1, "^(IGH|IGK|IGL|IGJ)") &  
+      str_detect(t_gene2, "^(IGH|IGK|IGL|IGJ)"))) %>%
+  filter(chr1 != "chrM", chr2 != "chrM", ! (chr1 == "chr14" & chr2 == "chr14")) %>%
+  mutate(t_gene1 = ifelse((str_detect(t_gene1, "^IGL") & chr1 == 22 & !str_detect(t_gene1, "^IGLL")), "IGLC1", t_gene1)) %>%
+  mutate(t_gene2 = ifelse((str_detect(t_gene2, "^IGL*") & chr2 == 22 & !str_detect(t_gene2, "^IGLL*")), "IGLC1", t_gene2)) %>%
+  mutate(t_gene1 = ifelse((str_detect(t_gene1, "^IGH") & chr1 == 14), "IGHG1", t_gene1)) %>%
+  mutate(t_gene2 = ifelse((str_detect(t_gene2, "^IGH*") & chr2 == 14), "IGHG1", t_gene2)) %>%
+  mutate(t_gene1 = ifelse((str_detect(t_gene1, "^IGK") & chr1 == 2), "IGKC", t_gene1)) %>%
+  mutate(t_gene2 = ifelse((str_detect(t_gene2, "^IGK*") & chr2 == 2), "IGKC", t_gene2)) %>%
+  
+  
+  mutate(
+    
+    ensemble_id1 =  AnnotationDbi::mapIds(edbv104,
+                  keys=t_gene1,
+                  column="GENEID",
+                  keytype="GENENAME",
+                  multiVals="first")
+   ) %>%
+  mutate(
+    
+    ensemble_id2 =  AnnotationDbi::mapIds(edbv104,
+                  keys=t_gene2,
+                  column="GENEID",
+                  keytype="GENENAME",
+                  multiVals="first")
+  ) %>%
+  mutate(
+    
+    strand1 =  AnnotationDbi::mapIds(edbv104,
+                  keys=t_gene1,
+                  column="SEQSTRAND",
+                  keytype="GENENAME",
+                  multiVals="first")
+  ) %>%
+  mutate(
+    
+    strand2 =  AnnotationDbi::mapIds(edbv104,
+                  keys=t_gene2,
+                  column="SEQSTRAND",
+                  keytype="GENENAME",
+                  multiVals="first")
+  ) %>%
+  mutate(strand1 = ifelse(strand1 == 1, "+", 
+                         ifelse(strand1 == -1, "-", NA))) %>%
+  mutate(strand2 = ifelse(strand2 == 1, "+", 
+                         ifelse(strand2 == -1, "-", NA))) 
+
+```
+
+
+```{r flair}
+
+metafusion_flair <-
+  flair_fusion_full %>%
+  #mutate(replicate = ifelse(is.na(replicate), 1, replicate)) %>%
+  #mutate(sample = paste(sample, replicate, sep="_")) %>% ### addon
+  mutate(`fusion genes` = str_replace(`#name`, "--", ":"), .after=1) %>% 
+  ## Origina next 4 lines to be removed ## 
+  mutate(chrom1 = str_extract(`5' breakpoint`,"chr(.+?)(?=-\\d)") 
+) %>%
+  mutate(chrom2 = str_extract(`3' breakpoint`, "chr(.+?)(?=-\\d)") 
+) %>%
+  mutate(base1 = str_match(`5' breakpoint`,  "chr\\d+-(\\d+)-")[, 2]) %>% 
+  mutate(base2 =str_match(`3' breakpoint`,  "chr\\d+-(\\d+)-")[, 2]) %>% 
+  # Fix chrom and base extraction
+  mutate(chrom1 = str_extract(`5' breakpoint`, "chr[^-]+")) %>%
+  mutate(chrom2 = str_extract(`3' breakpoint`, "chr[^-]+")) %>%
+  mutate(base1  = str_match(`5' breakpoint`, "chr[^-]+-(\\d+)")[,2]) %>%
+  mutate(base2  = str_match(`3' breakpoint`, "chr[^-]+-(\\d+)")[,2]) %>%
+  # Clean up gene names (removing 5'- and 3'- tags)
+  mutate(gene1 = str_extract(`5' breakpoint`,  "^(.+?)-chr") %>% str_replace("-chr", "") %>% str_replace("5'-", "")) %>%
+  mutate(gene2 = str_extract(`3' breakpoint`,  "^(.+?)-chr") %>% str_replace("-chr", "") %>% str_replace("3'-", "")) %>%
+  ## set strands to NA for now
+  mutate(strand1 = NA, strand2 = NA) %>%
+  mutate(library = "RNA", 
+         sample_type = "Tumour", 
+         disease = "MM", 
+         chrom1 = str_replace(chrom1, "chr", ""),
+         chrom2 = str_replace(chrom2, "chr", ""),
+         sample = str_replace(sample, ".fastq", "")) %>%
+  mutate(base1 = as.numeric(base1), base2=as.numeric(base2)) %>%
+  mutate(t_area1 = NA, t_area2 = NA) %>%
+  select(fid = `fusion genes`,
+         chr1 = chrom1,
+         pos1 = base1,
+         strand1,
+         chr2 = chrom2,
+         pos2=base2,
+         strand2,
+         library,
+         sample_name = sample,
+         sample_type,
+         disease,
+         tool = method,
+         split_cnt = `spanning reads`,
+         t_gene1 = gene1,
+         t_area1,
+         t_gene2 = gene2,
+         t_area2)  %>%
+  mutate(chrom1_region = paste(chr1, pos1, pos1, sep=":")) %>%
+  mutate(chrom2_region = paste(chr2, pos2, pos2, sep=":")) %>%
+ filter(! (str_detect(t_gene1, "^(IGH|IGK|IGL|IGJ)") &  
+      str_detect(t_gene2, "^(IGH|IGK|IGL|IGJ)"))) %>%
+  filter(chr1 != "chrM", chr2 != "chrM", ! (chr1 == "chr14" & chr2 == "chr14")) %>%
+  mutate(t_gene1 = ifelse((str_detect(t_gene1, "^IGL") & chr1 == 22 & !str_detect(t_gene1, "^IGLL")), "IGLC1", t_gene1)) %>%
+  mutate(t_gene2 = ifelse((str_detect(t_gene2, "^IGL*") & chr2 == 22 & !str_detect(t_gene2, "^IGLL*")), "IGLC1", t_gene2)) %>%
+  mutate(t_gene1 = ifelse((str_detect(t_gene1, "^IGH") & chr1 == 14), "IGHG1", t_gene1)) %>%
+  mutate(t_gene2 = ifelse((str_detect(t_gene2, "^IGH*") & chr2 == 14), "IGHG1", t_gene2)) %>%
+  mutate(t_gene1 = ifelse((str_detect(t_gene1, "^IGK") & chr1 == 2), "IGKC", t_gene1)) %>%
+  mutate(t_gene2 = ifelse((str_detect(t_gene2, "^IGK*") & chr2 == 2), "IGKC", t_gene2)) %>%
+  mutate(
+    
+    ensemble_id1 =  AnnotationDbi::mapIds(edbv97,
+                  keys=t_gene1,
+                  column="GENEID",
+                  keytype="GENENAME",
+                  multiVals="first")
+   ) %>%
+  mutate(
+    
+    ensemble_id2 =  AnnotationDbi::mapIds(edbv97,
+                  keys=t_gene2,
+                  column="GENEID",
+                  keytype="GENENAME",
+                  multiVals="first")
+  ) %>%
+  mutate(
+    
+    strand1 =  AnnotationDbi::mapIds(edbv97,
+                  keys=t_gene1,
+                  column="SEQSTRAND",
+                  keytype="GENENAME",
+                  multiVals="first")
+  ) %>%
+  mutate(
+    
+    strand2 =  AnnotationDbi::mapIds(edbv97,
+                  keys=t_gene2,
+                  column="SEQSTRAND",
+                  keytype="GENENAME",
+                  multiVals="first")
+  ) %>%
+  mutate(strand1 = ifelse(strand1 == 1, "+", 
+                         ifelse(strand1 == -1, "-", NA))) %>%
+  mutate(strand2 = ifelse(strand2 == 1, "+", 
+                         ifelse(strand2 == -1, "-", NA))) 
+
+
+```
+
+
+```{r longgf}
+metafusion_longgf <-
+  longgf_fusion_full %>%
+  #mutate(replicate = ifelse(is.na(replicate), 1, replicate)) %>%
+  #mutate(sample = paste(sample, replicate, sep="_")) %>% ### addon
+  mutate(library = "RNA", 
+         sample_type = "Tumour", 
+         disease = "MM", 
+         chrom1 = str_replace(chrom1, "chr", ""),
+         chrom2 = str_replace(chrom2, "chr", ""),
+         sample = str_replace(sample, ".fastq", "")) %>%
+  mutate(base1 = as.numeric(base1), base2=as.numeric(base2)) %>%
+  mutate(t_area1 = NA, t_area2 = NA) %>%
+  select(fid = `fusion genes`,
+         chr1 = chrom1,
+         pos1 = base1,
+         strand1,
+         chr2 = chrom2,
+         pos2=base2,
+         strand2,
+         library,
+         sample_name = sample,
+         sample_type,
+         disease,
+         tool = method,
+         split_cnt = numLR,
+         t_gene1 = gene1,
+         t_area1,
+         t_gene2 = gene2,
+         t_area2, 
+         ensemble_id1 = ensembl_id1,
+         ensemble_id2 = ensembl_id2)  %>%
+  mutate(chrom1_region = paste(chr1, pos1, pos1, sep=":")) %>%
+  mutate(chrom2_region = paste(chr2, pos2, pos2, sep=":")) %>%
+ filter(! (str_detect(t_gene1, "^(IGH|IGK|IGL|IGJ)") &  
+      str_detect(t_gene2, "^(IGH|IGK|IGL|IGJ)"))) %>%
+  filter(chr1 != "chrM", chr2 != "chrM", ! (chr1 == "chr14" & chr2 == "chr14")) %>%
+  mutate(t_gene1 = ifelse((str_detect(t_gene1, "^IGL") & chr1 == 22 & !str_detect(t_gene1, "^IGLL")), "IGLC1", t_gene1)) %>%
+  mutate(t_gene2 = ifelse((str_detect(t_gene2, "^IGL*") & chr2 == 22 & !str_detect(t_gene2, "^IGLL*")), "IGLC1", t_gene2)) %>%
+  mutate(t_gene1 = ifelse((str_detect(t_gene1, "^IGH") & chr1 == 14), "IGHG1", t_gene1)) %>%
+  mutate(t_gene2 = ifelse((str_detect(t_gene2, "^IGH*") & chr2 == 14), "IGHG1", t_gene2)) %>%
+  mutate(t_gene1 = ifelse((str_detect(t_gene1, "^IGK") & chr1 == 2), "IGKC", t_gene1)) %>%
+  mutate(t_gene2 = ifelse((str_detect(t_gene2, "^IGK*") & chr2 == 2), "IGKC", t_gene2)) %>%
+  
+   mutate(ensemble_id1 = ifelse(
+    str_detect(t_gene1, "^(IGH|IGK|IGL|IGJ)"),
+    AnnotationDbi::mapIds(
+      edbv104,
+      keys = t_gene1,
+      column = "GENEID",
+      keytype = "GENENAME",
+      multiVals = "first"
+    ), ensemble_id1
+  )) %>%
+  mutate(ensemble_id2 = ifelse(
+    str_detect(t_gene2, "^(IGH|IGK|IGL|IGJ)"),
+    AnnotationDbi::mapIds(
+      edbv104,
+      keys = t_gene2,
+      column = "GENEID",
+      keytype = "GENENAME",
+      multiVals = "first"
+    ), ensemble_id2
+  ))
+
+```
+
+
+```{r reannotate breakpoints}
+## Combine all fusion calls ### 
+fusions_all <-
+  bind_rows(
+    metafusion_jaffal,
+    metafusion_ctat,
+    metafusion_flair,
+    metafusion_fusionseeker,
+    metafusion_longgf,
+    #metafusion_genion,
+    # metafusion_arriba,
+    # metafusion_sf,
+    # metafusion_jaffa,
+    # metafusion_starseqr,
+    # metafusion_fusioncatcher,
+    # metafusion_ericscript
+    ) %>% 
+  filter(chr1 %in% c(1:22, "X", "Y")) %>%
+  filter(chr2 %in% c(1:22, "X", "Y")) %>%
+  filter(! is.na(ensemble_id1), ! is.na(ensemble_id2)) %>%
+  mutate(ensembl_id1 = tools::file_path_sans_ext(ensemble_id1)) %>%
+  mutate(ensembl_id2 = tools::file_path_sans_ext(ensemble_id2)) %>%
+  # rename(
+  #   ENSEMBL1 = gene_id1,
+  #   ENSEMBL2 = gene_id2,
+  #   TRANSCRIPT1 = transcript_id1,
+  #   TRANSCRIPT2 = transcript_id2
+  #   ) %>% 
+  select(-ensemble_id1, -ensemble_id2) %>%
+  setDT()
+
+
+# STEP 1: Load transcript data with gene context
+tx_gr <- transcripts(edbv104,
+                     columns = c("tx_id", "tx_name", "gene_id", "gene_name", 
+                                 "gene_biotype", "tx_support_level", "canonical_transcript"),
+                     return.type = "GRanges")
+
+# Define standard chromosomes
+standard_chrs <- paste0(c(1:22, "X", "Y"))
+
+# Filter tx_gr to include only standard chromosomes
+tx_gr <- tx_gr[as.character(seqnames(tx_gr)) %in% standard_chrs]
+
+# STEP 2: Convert to data.table
+tx_dt <- as.data.table(tx_gr)
+tx_dt[, tx_length := width(tx_gr)]
+tx_dt[, tx_strand := as.character(strand(tx_gr))]
+tx_dt <- tx_dt[!grepl("^LRG_", tx_name)]
+# STEP 3: Score transcripts
+score_transcript <- function(dt) {
+  ig_biotypes <- c("IG_C_gene", "IG_V_gene", "IG_J_gene", "IG_D_gene")
+
+  dt[, is_canonical := (tx_id == canonical_transcript | tx_name == canonical_transcript)]
+  dt[, support_score := fifelse(is.na(tx_support_level), 100, tx_support_level)]
+  dt[, biotype_score := fifelse(gene_biotype %in% c("protein_coding", ig_biotypes), 0, 1)]
+  dt[, has_symbol := gene_name != "" & !is.na(gene_name)]
+
+  # Apply priority override for IG genes
+  dt[grepl("^IG[HKL]", gene_name) & gene_biotype %in% ig_biotypes, total_score := -Inf]
+
+  # Prioritize based on multiple criteria
+  dt[is.na(total_score), total_score := (
+    fifelse(!is_canonical, 10, 0) +
+    fifelse(!has_symbol, 10, 0) +
+    biotype_score * 5 +
+    support_score +
+    -tx_length / 10000
+  )]
+
+  return(dt)
+}
+
+tx_dt <- score_transcript(tx_dt)
+
+# STEP 4: Annotate GRanges (overlap → nearby → nearest)
+get_best_gene_annot <- function(gr, tx_dt, window_size = 10000) {
+  tx_ranges <- GRanges(seqnames = tx_dt$seqnames,
+                       ranges = IRanges(start = tx_dt$start, end = tx_dt$end),
+                       strand = tx_dt$tx_strand)
+
+  # Step 1: Overlapping transcripts
+  overlaps <- findOverlaps(gr, tx_ranges)
+  olap_hits <- data.table(index = queryHits(overlaps), tx_idx = subjectHits(overlaps))
+
+  # Step 2: Nearby (10kb window)
+  unmatched <- setdiff(seq_along(gr), olap_hits$index)
+  gr_window <- resize(gr[unmatched], fix = "center", width = window_size * 2)
+  nearby_hits <- findOverlaps(gr_window, tx_ranges)
+  nearby_dt <- data.table(index = unmatched[queryHits(nearby_hits)], tx_idx = subjectHits(nearby_hits))
+
+  # Step 3: Nearest fallback
+  still_unmatched <- setdiff(unmatched, nearby_dt$index)
+  if (length(still_unmatched) > 0) {
+    nearest <- distanceToNearest(gr[still_unmatched], tx_ranges)
+    nearest_dt <- data.table(index = still_unmatched[queryHits(nearest)],
+                             tx_idx = subjectHits(nearest))
+    all_hits <- rbindlist(list(olap_hits, nearby_dt, nearest_dt))
+  } else {
+    all_hits <- rbindlist(list(olap_hits, nearby_dt))
+  }
+
+  tx_dt[, tx_idx := .I]
+  merged <- merge(all_hits, tx_dt, by = "tx_idx", all.x = TRUE)
+
+  # Select best transcript per input position
+  best <- merged[, .SD[which.min(total_score)], by = index]
+
+  result <- data.table(
+    gene_id = rep(NA_character_, length(gr)),
+    symbol = rep(NA_character_, length(gr)),
+    tx_id = rep(NA_character_, length(gr)),
+    biotype = rep(NA_character_, length(gr)),
+    tx_strand = rep(NA_character_, length(gr))
+  )
+
+  result[best$index, `:=`(
+    gene_id = best$gene_id,
+    symbol = best$gene_name,
+    tx_id = best$tx_id,
+    biotype = best$gene_biotype,
+    tx_strand = best$tx_strand
+  )]
+
+  return(result)
+}
+
+# STEP 5: Apply to fusion breakpoints
+gr1 <- GRanges(seqnames = fusions_all$chr1,
+               ranges = IRanges(start = fusions_all$pos1, end = fusions_all$pos1))
+gr2 <- GRanges(seqnames = fusions_all$chr2,
+               ranges = IRanges(start = fusions_all$pos2, end = fusions_all$pos2))
+
+info1 <- get_best_gene_annot(gr1, tx_dt)
+info2 <- get_best_gene_annot(gr2, tx_dt)
+
+# STEP 6: Add back to your fusion table
+fusions_all[, c("ensembl_gene1", "symbol1", "tx_id1", "biotype1", "tx_strand1") := info1]
+fusions_all[, c("ensembl_gene2", "symbol2", "tx_id2", "biotype2", "tx_strand2") := info2]
+
+
+## REANNOTATE IG regions 
+# Define IG gene info
+ig_biotypes <- c("IG_C_gene", "IG_V_gene", "IG_J_gene", "IG_D_gene")
+
+ig_map <- tibble(
+  prefix = c("IGH", "IGK", "IGL"),
+  new_symbol = c("IGH@", "IGK@", "IGL@"),
+  new_gene_id = c("ENSG00000211896", "ENSG00000211592", "ENSG00000211675"),
+  new_tx_id = c("ENST00000390542", "ENST00000390237", "ENST00000390321")
+)
+
+# Function to normalize IG gene for a breakpoint
+normalize_ig_breakpoint <- function(df, suffix) {
+  chr_col      <- sym(paste0("chr", suffix))
+  symbol_col   <- sym(paste0("symbol", suffix))
+  biotype_col  <- sym(paste0("biotype", suffix))
+  id_col       <- sym(paste0("ensembl_gene", suffix))
+  tx_col       <- sym(paste0("tx_id", suffix))
+  flag_col     <- paste0("is_IG_gene", suffix)
+
+  df %>%
+    mutate(
+      ig_prefix = case_when(
+        str_starts(!!symbol_col, "IGH") & (!!chr_col == 14) & (!!biotype_col %in% ig_biotypes) ~ "IGH",
+        str_starts(!!symbol_col, "IGK") & (!!chr_col == 2) & (!!biotype_col %in% ig_biotypes) ~ "IGK",
+        str_starts(!!symbol_col, "IGL") & (!!chr_col == 22) & (!!biotype_col %in% ig_biotypes) ~ "IGL",
+        TRUE ~ NA_character_
+      )
+    ) %>%
+    left_join(ig_map, by = c("ig_prefix" = "prefix")) %>%
+    mutate(
+      !!symbol_col := if_else(!is.na(ig_prefix), new_symbol, !!symbol_col),
+      !!id_col     := if_else(!is.na(ig_prefix), new_gene_id, !!id_col),
+      !!tx_col     := if_else(!is.na(ig_prefix), new_tx_id, !!tx_col),
+      !!flag_col   := !is.na(ig_prefix)
+    ) %>%
+    select(-ig_prefix, -new_symbol, -new_gene_id, -new_tx_id)
+}
+
+# Apply to both breakpoints
+fusions_all <- fusions_all %>%
+  normalize_ig_breakpoint("1") %>%
+  normalize_ig_breakpoint("2")
+
+
+## complete annnotation
+
+fusions_all <- fusions_all %>%
+  mutate(ENSEMBL1 = ensembl_gene1, ENSEMBL2 = ensembl_gene2) %>%
+  mutate(
+    
+    GENENAME1 =  AnnotationDbi::mapIds(edbv104,
+                  keys=ENSEMBL1,
+                  column="GENENAME",
+                  keytype="GENEID",
+                  multiVals="first")
+   ) %>%
+  mutate(
+    
+    GENENAME2 =  AnnotationDbi::mapIds(edbv104,
+                  keys=ENSEMBL2,
+                  column="GENENAME",
+                  keytype="GENEID",
+                  multiVals="first")
+  ) %>%
+  mutate(
+    
+    SYMBOL1 =  AnnotationDbi::mapIds(edbv104,
+                  keys=ENSEMBL1,
+                  column="SYMBOL",
+                  keytype="GENEID",
+                  multiVals="first")
+   ) %>%
+  mutate(
+    
+    SYMBOL2 =  AnnotationDbi::mapIds(edbv104,
+                  keys=ENSEMBL2,
+                  column="SYMBOL",
+                  keytype="GENEID",
+                  multiVals="first")
+  ) %>%
+  mutate(
+    
+    GENEIDVERSION1 =  AnnotationDbi::mapIds(edbv104,
+                  keys=ENSEMBL1,
+                  column="GENEIDVERSION",
+                  keytype="GENEID",
+                  multiVals="first")
+   ) %>%
+  mutate(
+    
+    GENEIDVERSION2 =  AnnotationDbi::mapIds(edbv104,
+                  keys=ENSEMBL2,
+                  column="GENEIDVERSION",
+                  keytype="GENEID",
+                  multiVals="first")
+  ) %>%
+  mutate(
+    
+    TXIDVERSION1 =  AnnotationDbi::mapIds(edbv104,
+                  keys=ENSEMBL1,
+                  column="TXIDVERSION",
+                  keytype="GENEID",
+                  multiVals="first")
+   ) %>%
+  mutate(
+    
+    TXIDVERSION2 =  AnnotationDbi::mapIds(edbv104,
+                  keys=ENSEMBL2,
+                  column="TXIDVERSION",
+                  keytype="GENEID",
+                  multiVals="first")
+  ) %>%
+  mutate(
+    
+    TRANSCRIPT1 =  AnnotationDbi::mapIds(edbv104,
+                  keys=ENSEMBL1,
+                  column="CANONICALTRANSCRIPT",
+                  keytype="GENEID",
+                  multiVals="first")
+   ) %>%
+  mutate(
+    
+    TRANSCRIPT2 =  AnnotationDbi::mapIds(edbv104,
+                  keys=ENSEMBL2,
+                  column="CANONICALTRANSCRIPT",
+                  keytype="GENEID",
+                  multiVals="first")
+  ) %>%
+  mutate(
+    
+    BIOTYPE1 =  AnnotationDbi::mapIds(edbv104,
+                  keys=ENSEMBL1,
+                  column="GENEBIOTYPE",
+                  keytype="GENEID",
+                  multiVals="first")
+   ) %>%
+  mutate(
+    
+    BIOTYPE2 =  AnnotationDbi::mapIds(edbv104,
+                  keys=ENSEMBL2,
+                  column="GENEBIOTYPE",
+                  keytype="GENEID",
+                  multiVals="first")
+  ) %>%
+  mutate(GENENAME1 = ifelse(t_gene1 == "C19MC", t_gene1, GENENAME1)) %>%
+  mutate(GENENAME2 = ifelse(t_gene2 == "C19MC", t_gene2, GENENAME2)) %>%
+  mutate(span_cnt = replace_na(span_cnt, 0)) %>%
+  mutate(split_cnt = replace_na(split_cnt, 0)) %>%
+  mutate(fusion_genes = paste(ENSEMBL1, ENSEMBL2, sep=":")) %>%
+  mutate(fusion_gene_id = paste(pmin(ENSEMBL1, ENSEMBL2), pmax(ENSEMBL1, ENSEMBL2), sep=":")) %>%
+  mutate(unique_id = paste(sample_name, fusion_gene_id, sep=":")) %>%
+  mutate(tool_id = paste(tool, unique_id, sep=":")) %>%
+  ungroup()
+  
+
+cytobands_from_BM <- getBM(mart = mart, attributes = c("chromosome_name", "band", "ensembl_gene_id"), filters = "ensembl_gene_id", values = c(fusions_all$ENSEMBL1, fusions_all$ENSEMBL2) %>% unique())
+
+
+fusions_all_final <- 
+  fusions_all %>%
+  left_join(cytobands_from_BM, by=c("chr1" = "chromosome_name", "ENSEMBL1" = "ensembl_gene_id")) %>%
+  mutate(CYTOBAND1 = paste0(chr1, band), .after = "TRANSCRIPT2") %>%
+  select(-band) %>%
+  left_join(cytobands_from_BM, by=c("chr2" = "chromosome_name", "ENSEMBL2" = "ensembl_gene_id")) %>%
+  mutate(CYTOBAND2 = paste0(chr2, band), .after = "CYTOBAND1") %>%
+  select(-band) %>%
+  mutate(CYTOBAND_BROAD1 = tools::file_path_sans_ext(CYTOBAND1)) %>%
+  mutate(CYTOBAND_BROAD2 = tools::file_path_sans_ext(CYTOBAND2)) %>%
+  mutate(fusion_cyto = paste(sample_name, CYTOBAND_BROAD1, CYTOBAND_BROAD2, sep=":"))  %>%
+  ungroup() %>% group_by(fusion_cyto) %>%
+  mutate(cyto_count=n()) 
+
+fusions_all_final_reannotated <- fusions_all_final %>%
+  select(
+    sample_name,
+    fid,
+    t_gene1,
+    t_gene2,
+    chr1,
+    pos1,
+    tx_strand1,
+    chr2,
+    pos2,
+    tx_strand2,
+    tool,
+    split_cnt,
+    span_cnt,
+    ENSEMBL1,
+    ENSEMBL2,
+    SYMBOL1,
+    SYMBOL2,
+    CYTOBAND1,
+    CYTOBAND2,
+    CYTOBAND_BROAD1,
+    CYTOBAND_BROAD2,
+    BIOTYPE1,
+    BIOTYPE2,
+    TRANSCRIPT1,
+    TRANSCRIPT2,
+    GENENAME1,
+    GENENAME2,
+    GENEIDVERSION1,
+    GENEIDVERSION2,
+    TXIDVERSION1,
+    TXIDVERSION2,
+    t_area1,
+    t_area2,
+    chrom1_region,
+    chrom2_region,
+    fusion_genes,
+    fusion_gene_id,
+    unique_id,
+    tool_id,
+    fusion_cyto,
+    cyto_count
+  )
+
+```
+
+
+```{r high_confidence}
+
+min_count <- 3 ## 3 supporting reads
+read_through <- 300 * 1000 ## 300 kb
+valid_biotypes <- c(
+  "protein_coding", 
+  "IG_C_gene", "IG_V_gene", "IG_J_gene", "IG_D_gene",
+  "TR_C_gene", "TR_V_gene", "TR_J_gene", "TR_D_gene"
+)
+
+valid_biotypes <- c(
+  "protein_coding",
+  "IG_C_gene",         # Immunoglobulin constant region
+  "IG_D_gene",         # IG diversity gene segment
+  "IG_J_gene",         # IG joining segment
+  "IG_LV_gene",        # Lambda variable gene
+  "IG_V_gene",         # Variable region (general)
+  "TR_C_gene",         # T-cell receptor constant
+  "TR_D_gene",         # TCR diversity segment
+  "TR_J_gene",         # TCR joining segment
+  "TR_V_gene",         # TCR variable region
+  "lncRNA",
+  "antisense",
+  "sense_intronic",
+  "sense_overlapping",
+  "processed_transcript"
+)
+
+excluded_biotypes <- c(
+  "rRNA", "tRNA", "snoRNA", "snRNA", "scaRNA",
+  "miRNA", "misc_RNA", "TEC", "pseudogene",
+  "processed_pseudogene", "unprocessed_pseudogene",
+  "transcribed_unitary_pseudogene", "non_stop_decay",
+  "nonsense_mediated_decay"
+)
+
+fusions_all_final_deduplicated <- 
+  fusions_all_final_reannotated %>%
+  mutate(cell_line = str_sub(sample_name, 7, -2)) %>%
+  #mutate(cell_line = str_remove(sample_name, "_\\d+$")) %>%
+  mutate(gap = ifelse(chr1 == chr2, abs(pos1-pos2), Inf)) %>%
+  group_by(tool_id) %>%
+  mutate(split_cnt = sum(split_cnt), span_cnt =sum(span_cnt)) %>%
+  mutate(duplicate = row_number()) %>% 
+  mutate(read_cnt = ifelse(split_cnt > span_cnt, split_cnt, span_cnt)) %>%  
+  filter(duplicate == 1)
+
+fusions_all_final_deduplicated_high_confidence <- 
+  fusions_all_final_deduplicated %>%
+  filter(gap > read_through) %>%
+  filter(BIOTYPE1 %in% valid_biotypes | BIOTYPE2 %in% valid_biotypes) %>%
+  filter(! (BIOTYPE1 %in% ig_biotypes & BIOTYPE2 %in% ig_biotypes))  %>%
+  setDT() 
+
+```
+
+
+
+```{r cluster_by_distance}
+
+# Assumes a data.table with: sample_name, chr1, pos1, chr2, pos2
+
+##create dummy columns to allow clustering agnostic of fusion direction A-B == B-A
+fusions_all_final_deduplicated_high_confidence[, `:=`(
+  ensg_a = pmin(ENSEMBL1, ENSEMBL2),
+  ensg_b = pmax(ENSEMBL1, ENSEMBL2)
+)]
+
+fusions_all_final_deduplicated_high_confidence[, `:=`(
+  chr_a  = fifelse(ENSEMBL1 == ensg_a, chr1, chr2),
+  pos_a  = fifelse(ENSEMBL1 == ensg_a, pos1, pos2),
+  chr_b  = fifelse(ENSEMBL2 == ensg_a, chr2, chr1),
+  pos_b  = fifelse(ENSEMBL2 == ensg_a, pos2, pos1)
+)]
+
+fusions_all_final_deduplicated_high_confidence[, `:=`(
+  ensg_a = ifelse(chr1 < chr2 | (chr1 == chr2 & pos1 <= pos2), ENSEMBL1, ENSEMBL2),
+  ensg_b = ifelse(chr1 < chr2 | (chr1 == chr2 & pos1 <= pos2), ENSEMBL2, ENSEMBL1),
+  
+  chr_a  = ifelse(chr1 < chr2 | (chr1 == chr2 & pos1 <= pos2), chr1, chr2),
+  pos_a  = ifelse(chr1 < chr2 | (chr1 == chr2 & pos1 <= pos2), pos1, pos2),
+  
+  chr_b  = ifelse(chr1 < chr2 | (chr1 == chr2 & pos1 <= pos2), chr2, chr1),
+  pos_b  = ifelse(chr1 < chr2 | (chr1 == chr2 & pos1 <= pos2), pos2, pos1)
+)]
+
+
+# Set your distance threshold
+dist_thresh <- 100000
+
+# Breakpoint clustering function
+cluster_breakpoints <- function(dt, chr_col, pos_col, suffix, dist_thresh = dist_thresh) {
+  dt <- copy(dt)
+  # Correct way to order using column names as characters
+  setorderv(dt, c(chr_col, pos_col))
+  
+  # Initialize cluster column
+  dt[, paste0("cluster_", suffix) := NA_integer_]
+  
+  cluster_id <- 1
+  for (chr in unique(dt[[chr_col]])) {
+    chr_subset <- dt[get(chr_col) == chr]
+    current_cluster <- cluster_id
+    last_pos <- -Inf
+    
+    for (i in seq_len(nrow(chr_subset))) {
+      this_pos <- chr_subset[[pos_col]][i]
+      if (abs(this_pos - last_pos) > dist_thresh) {
+        current_cluster <- cluster_id
+        cluster_id <- cluster_id + 1
+      }
+      row_index <- which(dt[[chr_col]] == chr & dt[[pos_col]] == this_pos & is.na(dt[[paste0("cluster_", suffix)]]))[1]
+      if (!is.na(row_index)) {
+        dt[row_index, paste0("cluster_", suffix) := current_cluster]
+      }
+      last_pos <- this_pos
+    }
+  }
+  return(dt)
+}
+
+cluster_breakpoints <- function(dt, chr_col, pos_col, suffix, dist_thresh = 100000) {
+  dt <- copy(dt)
+  setorderv(dt, c("sample_name", chr_col, pos_col))  # Sort by sample, chr, pos
+
+  dt[, paste0("cluster_", suffix) := NA_integer_]
+
+  cluster_id <- 1
+
+  # Group by sample_name and chromosome
+  dt[, {
+    last_pos <- -Inf
+    current_cluster <- cluster_id
+
+    for (i in .I) {
+      this_pos <- dt[[pos_col]][i]
+      if (abs(this_pos - last_pos) > dist_thresh) {
+        current_cluster <- cluster_id
+        cluster_id <<- cluster_id + 1
+      }
+      dt[i, (paste0("cluster_", suffix)) := current_cluster]
+      last_pos <- this_pos
+    }
+    NULL
+  }, by = .(sample_name, get(chr_col))]
+
+  return(dt)
+}
+
+cluster_breakpoints <- function(dt, chr_col, pos_col, suffix, dist_thresh = dist_thresh, group_cols = NULL) {
+  dt <- copy(dt)
+  cluster_col <- paste0("cluster_", suffix)
+
+  # Build full grouping: group_cols + chromosome
+  full_group <- c(group_cols, chr_col)
+  setorderv(dt, c(full_group, pos_col))
+
+  dt[, (cluster_col) := NA_integer_]
+  cluster_id <- 1
+
+  dt[, {
+    last_pos <- -Inf
+    current_cluster <- cluster_id
+
+    for (i in .I) {
+      this_pos <- dt[[pos_col]][i]
+      if (abs(this_pos - last_pos) > dist_thresh) {
+        current_cluster <- cluster_id
+        cluster_id <<- cluster_id + 1
+      }
+      dt[i, (cluster_col) := current_cluster]
+      last_pos <- this_pos
+    }
+    NULL
+  }, by = full_group]
+
+  return(dt)
+}
+
+# Run clustering on both breakpoints
+# fusions_all_final_deduplicated_high_confidence <- 
+#   fusions_all_final_deduplicated_high_confidence %>% 
+#   setDT() %>%
+#   cluster_breakpoints("chr1", "pos1", "1") %>%
+#   cluster_breakpoints("chr2", "pos2", "2")
+
+fusions_all_final_deduplicated_high_confidence <- 
+  fusions_all_final_deduplicated_high_confidence %>%
+  cluster_breakpoints("chr_a", "pos_a", "a", dist_thresh = dist_thresh, group_cols=NULL) %>%
+  cluster_breakpoints("chr_b", "pos_b", "b", dist_thresh = dist_thresh, group_cols=NULL)
+
+# Collapse multiple cluster assignments for same gene to the smallest cluster
+fusions_all_final_deduplicated_high_confidence[, cluster_a := min(cluster_a), by = ensg_a]
+fusions_all_final_deduplicated_high_confidence[, cluster_b := min(cluster_b), by = ensg_b]
+
+
+# Create combined fusion cluster ID
+# fusions_all_final_deduplicated_high_confidence[, fusion_cluster := paste0(cluster_1, "__", cluster_2)]
+# fusions_all_final_deduplicated_high_confidence[, fusion_cluster_sorted := {
+#   a <- pmin(cluster_1, cluster_2, na.rm = TRUE)
+#   b <- pmax(cluster_1, cluster_2, na.rm = TRUE)
+#   paste0(a, "__", b)
+# }]
+
+fusions_all_final_deduplicated_high_confidence[, fusion_cluster := paste0(cluster_a, "__", cluster_b)]
+fusions_all_final_deduplicated_high_confidence[, fusion_cluster_sorted := {
+  a <- pmin(cluster_a, cluster_b, na.rm = TRUE)
+  b <- pmax(cluster_a, cluster_b, na.rm = TRUE)
+  paste0(a, "__", b)
+}]
+
+fusions_all_final_deduplicated_high_confidence[, c("chr_a", "pos_a", "chr_b", "pos_b", "ensg_a", "ensg_b") := NULL]
+
+
+
+```
+
+
+```{r}
+custom_annotation_table <- 
+  bind_rows(
+    fusions_all_final_deduplicated_high_confidence %>% 
+      ungroup() %>%
+      select(chr=chr1, ENSEMBL=ENSEMBL1, SYMBOL=SYMBOL1, 
+             TRANSCRIPT=TRANSCRIPT1, GENEIDVERSION=GENEIDVERSION1, 
+             TXIDVERSION=TXIDVERSION1, BIOTYPE=BIOTYPE1, 
+             CYTOBAND_BROAD=CYTOBAND_BROAD1),
+    fusions_all_final_deduplicated_high_confidence %>%
+      ungroup() %>%
+      select(chr=chr2, ENSEMBL=ENSEMBL2, 
+             SYMBOL=SYMBOL2, TRANSCRIPT=TRANSCRIPT2, 
+             GENEIDVERSION=GENEIDVERSION2, 
+             TXIDVERSION=TXIDVERSION2, BIOTYPE=BIOTYPE2, 
+             CYTOBAND_BROAD=CYTOBAND_BROAD2)
+  ) %>%
+  distinct()
+
+
+custom_ann <- function(df){
+  ann_df <- df %>%
+    separate(fusion_gene_id, into = c("geneA", "geneB"), sep = ":", remove = F) %>%
+    left_join(custom_annotation_table, 
+            by = c("geneA" = "ENSEMBL")
+            ) %>%
+    rename_with(~ paste0(.x, "_A"), 
+              .cols = setdiff(names(custom_annotation_table), "ENSEMBL"))  %>%
+    left_join(custom_annotation_table, 
+            by = c("geneB" = "ENSEMBL")
+            ) %>%
+    rename_with(~ paste0(.x, "_B"), 
+              .cols = setdiff(names(custom_annotation_table), "ENSEMBL")) 
+  
+  return(ann_df)
+}
+
+
+hc_fusion_ids <- fusions_all_final_deduplicated_high_confidence %>%
+  mutate(cid = paste(cell_line, fusion_gene_id, sep=":")) %>%
+  pull(cid) %>% unique()
+```
+
+
+
+```{r fusion_gene_counts}
+
+min_count <- 3
+
+fusions_all_final_deduplicated_high_confidence_min3_genes <- 
+  fusions_all_final_deduplicated_high_confidence %>%
+  filter(read_cnt >= min_count)
+
+fusion_gene_counts_min_read_3 <- 
+  fusions_all_final_deduplicated_high_confidence_min3_genes %>%
+  group_by(sample_name, tool) %>%
+  summarise(gene_count = n()) %>%
+  mutate("Sequencing method" = str_sub(tool, 1,2)) %>%
+  group_by(sample_name, `Sequencing method`) %>%
+  mutate("Fusion gene candidates" = sum(gene_count))
+
+fusion_gene_counts_min_read_1 <- fusions_all_final_deduplicated_high_confidence %>%
+  group_by(sample_name, tool) %>%
+  summarise(gene_count = n()) %>%
+  mutate("Sequencing method" = str_sub(tool, 1,2)) %>%
+  group_by(sample_name, `Sequencing method`) %>%
+  mutate("Fusion gene candidates" = sum(gene_count))
+
+
+all_fusion_candidates_barplot <-
+  ggpubr::ggbarplot(fusion_gene_counts_min_read_1 %>%
+                      filter(sample_name != "A037"), "sample_name", "Fusion gene candidates",
+  fill = "Sequencing method", 
+  color = "Sequencing method", 
+  palette = "Paired",
+  label = FALSE, lab.col = "white", lab.pos = "in", 
+  xlab = "Sample",
+  #add = c("mean_se"), 
+  #palette = c("steelblue", "navy"),
+ position = position_dodge())
+
+high_confidence_fusion_candidates_barplot <- 
+  (ggpubr::ggbarplot(fusion_gene_counts_min_read_3  %>%
+                      filter(sample_name != "A037"), "sample_name", "Fusion gene candidates",
+ fill = "Sequencing method", 
+  color = "Sequencing method", 
+  #palette = "Paired",
+ xlab = "Sample",
+  label = FALSE, lab.col = "white", lab.pos = "in", 
+  #add = c("mean_se"), 
+ palette = c("dark red", "dark blue"),
+ position = position_dodge()) + 
+   scale_x_discrete(labels = function(x) str_wrap(x, 5)) +
+   ggtitle("All fusion gene candidates") )%>%
+   ggpar(
+     font.title = c(16, "bold", "black"),
+     font.family = "sans",
+     
+     theme=theme_pubclean()
+   ) 
+
+
+tiff(
+    filename = paste0("plots/", Sys.Date(), "_", "bar_plot_fusion_candidates.tiff"),
+    units = "in",
+    width = 12,
+    height = 5,
+    res = 300,
+    compression = 'lzw'
+  )
+all_fusion_candidates_barplot
+
+dev.off()
+
+
+tiff(
+    filename = paste0("plots/", Sys.Date(), "_", "high_confidence_bar_plot_fusion_candidates.tiff"),
+    units = "in",
+    width = 10,
+    height = 5,
+    res = 300,
+    compression = 'lzw'
+  )
+high_confidence_fusion_candidates_barplot
+
+dev.off()
+
+all_fusion_candidates_barplot
+high_confidence_fusion_candidates_barplot
+```
+
+
+```{r consensus_calls}
+
+
+min_count <- 3
+
+fusions_all_caller_counts <-   
+  fusions_all_final_deduplicated_high_confidence %>%
+  mutate(cell_line = str_replace_all(cell_line, "_", " ")) %>%
+  
+  filter(read_cnt >= min_count) %>% 
+  mutate(caller_type = str_sub(tool, 1,2)) %>%
+  group_by(cell_line, sample_name, unique_id, fusion_gene_id, caller_type) %>% 
+  summarise(n= n()) %>%
+  pivot_wider(names_from = caller_type, values_from = n) %>%
+  { if (!"SR" %in% names(.)) mutate(., SR = 0L) else . } %>%  # Add SR column if missing
+  replace(is.na(.), 0) %>%
+  mutate(total_callers = LR+SR) 
+
+fusions_called_in_two <- 
+  fusions_all_caller_counts %>%
+  filter(total_callers > 1) 
+
+fusions_called_in_two_callers_for_two_replicates <- 
+  fusions_called_in_two %>%
+  group_by(cell_line, fusion_gene_id) %>% 
+  mutate(replicate_cnt=n()) %>%
+  filter(replicate_cnt >= 2) %>%
+  mutate(detected_by = case_when(
+    LR > 1 & SR < 2 ~ "LR",
+    SR > 1 & LR < 2 ~ "SR",
+    LR > 1 & SR > 1 ~ "Both",
+    .default = NA
+  )) %>%
+  select(cell_line, fusion_gene_id, detected_by) %>%
+  distinct() 
+
+
+fusions_called_in_three <- fusions_all_caller_counts %>%
+  filter(total_callers > 2)
+
+
+fusions_called_in_three_callers_two_replicates <- 
+  fusions_called_in_three %>%
+  group_by(cell_line, fusion_gene_id) %>% 
+  mutate(replicate_cnt=n()) %>%
+  filter(replicate_cnt >= 2) %>%
+  select(cell_line, fusion_gene_id, LR, SR) %>%
+  distinct() %>%
+  mutate(detected_by = case_when(
+    LR > 2 & SR < 3 ~ "LR",
+    SR > 2 & LR < 3 ~ "SR",
+    LR > 2 & SR > 2 ~ "Both",
+    .default = NA
+  )) 
+
+
+## caller counts annotated ####
+## LR calls ###
+fusions_called_in_one_LR_callers_one_replicates <- 
+  fusions_all_caller_counts %>%
+  filter(LR > 0) %>%
+  group_by(cell_line, fusion_gene_id) %>% 
+  mutate(replicate_cnt=n()) %>%
+  filter(replicate_cnt >= 1) %>%
+  filter(LR >= 1) %>%
+  select(cell_line, fusion_gene_id) %>%
+  distinct()
+
+fusions_called_in_one_LR_callers_two_replicates <- 
+  fusions_all_caller_counts %>%
+  filter(LR > 0) %>%
+  group_by(cell_line, fusion_gene_id) %>% 
+  mutate(replicate_cnt=n()) %>%
+  filter(replicate_cnt >= 2) %>%
+  filter(LR >= 1) %>%
+  select(cell_line, fusion_gene_id) %>%
+  distinct() %>% custom_ann()
+
+fusions_called_in_one_LR_callers_three_replicates <- 
+  fusions_all_caller_counts %>%
+  filter(LR > 0) %>%
+  group_by(cell_line, fusion_gene_id) %>% 
+  mutate(replicate_cnt=n()) %>%
+  filter(replicate_cnt >= 3) %>%
+  filter(LR >= 1) %>%
+  select(cell_line, fusion_gene_id) %>%
+  distinct() %>% custom_ann()
+
+
+fusions_called_in_one_LR_callers_four_replicates <- 
+  fusions_all_caller_counts %>%
+  filter(LR > 0) %>%
+  group_by(cell_line, fusion_gene_id) %>% 
+  mutate(replicate_cnt=n()) %>%
+  filter(replicate_cnt >= 4) %>%
+  filter(LR >= 1) %>%
+  select(cell_line, fusion_gene_id) %>%
+  distinct() %>% custom_ann()
+
+
+
+fusions_called_in_two_LR_callers_one_replicates <- 
+  fusions_all_caller_counts %>%
+  filter(LR > 1) %>%
+  group_by(cell_line, fusion_gene_id) %>% 
+  mutate(replicate_cnt=n()) %>%
+  filter(replicate_cnt >= 1) %>%
+  filter(LR > 1) %>%
+  select(cell_line, fusion_gene_id) %>%
+  distinct() 
+
+fusions_called_in_three_LR_callers_one_replicates <- 
+  fusions_all_caller_counts %>%
+  filter(LR > 2) %>%
+  group_by(cell_line, fusion_gene_id) %>% 
+  mutate(replicate_cnt=n()) %>%
+  filter(replicate_cnt >= 1) %>%
+  filter(LR > 2) %>%
+  select(cell_line, fusion_gene_id) %>%
+  distinct() 
+
+
+fusions_called_in_two_LR_callers_two_replicates <- 
+  fusions_called_in_two %>%
+  group_by(cell_line, fusion_gene_id) %>% 
+  mutate(replicate_cnt=n()) %>%
+  filter(replicate_cnt >= 2) %>%
+  filter(LR > 1) %>%
+  select(cell_line, fusion_gene_id) %>%
+  distinct() 
+
+fusions_called_in_two_LR_callers_three_replicates <- 
+  fusions_called_in_two %>%
+  group_by(cell_line, fusion_gene_id) %>% 
+  mutate(replicate_cnt=n()) %>%
+  filter(replicate_cnt >= 3) %>%
+  filter(LR > 1) %>%
+  select(cell_line, fusion_gene_id) %>%
+  distinct() 
+
+fusions_called_in_three_LR_callers_two_replicates <- 
+  fusions_called_in_two %>%
+  group_by(cell_line, fusion_gene_id) %>% 
+  mutate(replicate_cnt=n()) %>%
+  filter(replicate_cnt >= 2) %>%
+  filter(LR > 2) %>%
+  select(cell_line, fusion_gene_id) %>%
+  distinct() 
+
+fusions_called_in_three_LR_callers_three_replicates <- 
+  fusions_called_in_two %>%
+  group_by(cell_line, fusion_gene_id) %>% 
+  mutate(replicate_cnt=n()) %>%
+  filter(replicate_cnt >= 3) %>%
+  filter(LR > 2) %>%
+  select(cell_line, fusion_gene_id) %>%
+  distinct() 
+
+fusions_called_in_two_LR_callers_one_replicates %>% nrow()
+fusions_called_in_three_LR_callers_one_replicates %>% nrow()
+fusions_called_in_two_LR_callers_two_replicates %>% nrow()
+fusions_called_in_three_LR_callers_two_replicates %>% nrow()
+
+
+####
+fusions_called_in_one_LR_callers_one_replicates  %<>% custom_ann()
+
+fusions_called_in_two_LR_callers_one_replicates %<>% custom_ann()
+fusions_called_in_three_LR_callers_one_replicates %<>% custom_ann()
+fusions_called_in_two_LR_callers_two_replicates %<>% custom_ann()
+fusions_called_in_three_LR_callers_two_replicates %<>% custom_ann()
+fusions_called_in_two_LR_callers_three_replicates %<>% custom_ann()
+fusions_called_in_three_LR_callers_three_replicates %<>% custom_ann()
+
+
+
+fusions_called_in_one_LR_callers_one_replicates %>%
+  group_by(cell_line) %>%
+  summarise(n())
+
+fusions_called_in_two_LR_callers_one_replicates %>%
+  group_by(cell_line) %>%
+  summarise(n())
+
+fusions_called_in_two_LR_callers_two_replicates %>%
+  group_by(cell_line) %>%
+  summarise(n())
+
+
+
+# fusions_called_in_one_LR_callers_one_replicates %>%
+#   filter(str_detect(fusion_gene_id, "ENSG00000110092"))
+# fusions_all_final_deduplicated_high_confidence %>%
+#   filter(str_detect(fusion_gene_id, "ENSG00000110092"))
+# 
+# fusions_called_in_two_LR_callers_one_replicates %>%
+#   filter(str_detect(fusion_gene_id, "ENSG00000110092"))
+
+fusions_called_in_two_LR_callers_three_replicates
+fusions_called_in_three_LR_callers_three_replicates
+
+fusions_called_in_two_LR_callers_two_replicates %>%
+  ungroup() %>%
+  select(fusion_gene_id, SYMBOL_A, SYMBOL_B, CYTOBAND_BROAD_A, CYTOBAND_BROAD_B) %>% filter(fusion_gene_id %in% (
+fusions_called_in_two_LR_callers_two_replicates %>%
+  ungroup() %>%
+  mutate(protocol = ifelse(str_detect(cell_line, "cDNA"), "cDNA", "dRNA")) %>%
+  select(fusion_gene_id, protocol) %>%
+  distinct() %>%
+  group_by(fusion_gene_id) %>%
+  mutate(n = n()) %>% 
+  filter(n > 1) %>%
+  select(fusion_gene_id) %>% pull()
+)
+) %>% View()
+
+
+fusion_list <- split(fusions_called_in_two_LR_callers_two_replicates$fusion_gene_id, fusions_called_in_two_LR_callers_two_replicates$cell_line)
+
+likely_fusions_upset <- UpSetR::upset(fromList(fusion_list), 
+      nsets = 4, 
+      nintersects = NA,
+      order.by = "freq")
+
+likely_fusions_upset
+svg("Upset_fusions_dRNAvscDNA.svg", width = 8, height = 6)  
+likely_fusions_upset
+dev.off()
+
+
+```
+
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+df_single <- fusions_called_in_two_LR_callers_one_replicates %>%
+  group_by(cell_line) %>%
+  summarise(n=n())
+
+df_replicates <- fusions_called_in_two_LR_callers_two_replicates %>%
+  group_by(cell_line) %>%
+  summarise(n=n())
+
+
+# add category column and combine
+df_plot <- bind_rows(
+  df_single %>% mutate(category = "≥1 replicate"),
+  df_replicates %>% mutate(category = "≥2 replicates")
+)
+
+# factor order for nice display
+df_plot$cell_line <- factor(df_plot$cell_line,
+                            levels = c("cDNA Control", "cDNA IL6",
+                                       "dRNA Control", "dRNA IL6"))
+
+df_plot$category <- factor(df_plot$category,
+                           levels = c("≥1 replicate", "≥2 replicates"))
+
+# grouped barplot
+fusions_by_sample_plot <- 
+  ggplot(df_plot, aes(x = cell_line, y = n, fill = category)) +
+  geom_col(position = position_dodge(width = 0.7), width = 0.6, color="black") +
+  geom_text(aes(label = n),
+            position = position_dodge(width = 0.7),
+            vjust = -0.5, size = 4) +
+  scale_fill_manual(values = c("≥1 replicate" = "#E41A1C",
+                               "≥2 replicates" = "#377EB8")) +
+  expand_limits(y = max(df_plot$n) * 1.1) +
+  labs(x = NULL,
+       y = "Number of fusion genes",
+       fill = NULL,
+       title = "Fusion gene calls in cDNA vs dRNA",
+       caption = "SKMM2 cell lines in control and IL6 treated conditions") +
+
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "top",
+    axis.text.x = element_text(angle = 25, hjust = 1),
+    plot.title = element_text(face = "bold", hjust = 0.5)
+  )
+
+fusions_by_sample_plot
+
+
+fusions_by_sample_plot_log <- ggplot(df_plot, aes(x = cell_line, y = n, fill = category)) +
+  geom_col(position = position_dodge(width = 0.7), width = 0.6, color = "black") +
+  geom_text(aes(label = n),
+            position = position_dodge(width = 0.7),
+            vjust = -0.4, size = 4) +
+  scale_fill_manual(values = c("≥1 replicate" = "#E41A1C",
+                               "≥2 replicates" = "#377EB8")) +
+  # log scale
+  scale_y_log10(labels = scales::comma_format()) +
+  annotation_logticks(sides = "l") +
+  expand_limits(y = max(df_plot$n) * 1.3) +
+  labs(x = NULL,
+       y = "Number of fusion genes (log10 scale)",
+       fill = NULL,
+       title = "Fusion gene calls in cDNA vs dRNA",
+       caption = "SKMM2 cell lines in control and IL6 treated conditions.") +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "top",
+    axis.text.x = element_text(angle = 25, hjust = 1),
+    plot.title = element_text(face = "bold", hjust = 0.5)
+  )
+
+
+fusions_by_sample_plot_log
+svg("Fusions_dRNAvscDNA.svg", width = 8, height = 6)  
+fusions_by_sample_plot
+dev.off()
+
+svg("Fusions_dRNAvscDNA_log.svg", width = 8, height = 6)  
+fusions_by_sample_plot_log
+dev.off()
+```
+
+
+```{r}
+sessionInfo()
+```
+
