@@ -1,0 +1,7 @@
+Sample	Counts
+SKMM2_drna_control1.subsampled.sorted	5822564
+SKMM2_drna_control2.subsampled.sorted	5851457
+SKMM2_drna_control3.subsampled.sorted	5907502
+SKMM2_drna_IL61.subsampled.sorted	5762067
+SKMM2_drna_IL62.subsampled.sorted	5833850
+SKMM2_drna_IL63.subsampled.sorted	5837041

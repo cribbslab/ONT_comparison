@@ -1,0 +1,7 @@
+Sample	Counts
+control_1_cDNA.pychopper.subsampled.sorted	6983188
+control_2_cDNA.pychopper.subsampled.sorted	7009556
+control_3_cDNA.pychopper.subsampled.sorted	6954393
+IL6_1_cDNA.pychopper.subsampled.sorted	6898280
+IL6_2_cDNA.pychopper.subsampled.sorted	6831046
+IL6_3_cDNA.pychopper.subsampled.sorted	6832174
